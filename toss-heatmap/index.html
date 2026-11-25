@@ -71,6 +71,48 @@ tbody tr { cursor: pointer; }
 tbody tr:hover { background: #1a2024; }
 tr:last-child td { border-bottom: 0; }
 .foot { font-size: 11px; color: var(--muted); line-height: 1.6; }
+/* AI 분석 */
+.ai-confirm[hidden], .ai-prog[hidden], .ai-err[hidden], .ai-note[hidden], .past[hidden] { display: none; }
+.ai-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { font: inherit; font-size: 13px; color: var(--fg); background: #1b2025; border: 1px solid #39424a; border-radius: 6px; padding: 8px 12px; cursor: pointer; text-align: left; max-width: 100%; }
+.btn:hover:not(:disabled) { background: #232a2f; }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn:focus-visible { outline: 2px solid var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.ghost { background: none; }
+.ai-note { font-size: 12px; color: #e0bb5f; }
+.ai-confirm { background: #2a2414; border: 1px solid #4a3d1c; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 1.5; }
+.ai-confirm .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.ai-prog { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.prov-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.pchip { font-size: 12px; padding: 4px 9px; border-radius: 999px; background: #1b2025; border: 1px solid #39424a; color: var(--muted); }
+.pchip.running { color: var(--accent); border-color: var(--accent); }
+.pchip.done { color: var(--up); border-color: #1f6b36; }
+.pchip.failed { color: var(--down); border-color: #7a2a2d; }
+.ai-prog .line { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ai-err { font-size: 13px; color: #ff9a9d; }
+.past h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.past ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.past button { font: inherit; font-size: 12px; width: 100%; text-align: left; color: var(--fg); background: none; border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+.past button:hover, .past button[aria-current="true"] { background: #1a2024; border-color: #39424a; }
+.past button:focus-visible { outline: 2px solid var(--accent); }
+.report { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 14px; min-width: 0; overflow-wrap: anywhere; }
+.report h3 { margin: 0; font-size: 16px; }
+.report h4 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+.report p, .report li { margin: 0; line-height: 1.65; font-size: 13px; white-space: pre-wrap; }
+.report ol, .report ul.plain { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.report .concl { background: #1a2024; border-radius: 6px; padding: 10px 12px 10px 12px; }
+.report .concl li { font-size: 14px; font-weight: 500; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #2a2414; border: 1px solid #4a3d1c; color: #e0bb5f; }
+.view { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.view:last-child { border-bottom: 0; }
+.view .who { min-width: 64px; font-size: 12px; font-weight: 600; }
+.badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: #414554; color: #fff; white-space: nowrap; }
+.badge.pos { background: #2f9e4f; } .badge.neg { background: #c4302f; } .badge.neu { background: #4a5359; }
+.report a { color: var(--accent); }
+.report pre { margin: 0; white-space: pre-wrap; font-family: var(--mono); font-size: 12px; background: #0f1214; border: 1px solid var(--line); border-radius: 6px; padding: 10px; max-height: 480px; overflow: auto; }
+.report .disc { font-size: 11px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -108,6 +150,26 @@ tr:last-child td { border-bottom: 0; }
       </div>
     </div>
     <div id="chart"></div>
+  </section>
+
+  <section class="card" id="ai" hidden>
+    <h2>AI 분석</h2>
+    <div class="ai-note" id="ai-note" hidden>AI 키가 없어서 예시 보고서로 보여드려요</div>
+    <div class="ai-btns">
+      <button type="button" class="btn" id="ai-quick">⚡ 빠른 분석 (1~2분, 수백 원)</button>
+      <button type="button" class="btn" id="ai-deep">🔬 딥 리서치 (5~20분, 약 1만~2만 5천 원)</button>
+    </div>
+    <div class="ai-confirm" id="ai-confirm" role="alertdialog" aria-label="딥 리서치 확인" hidden>
+      <div>딥 리서치는 약 1만~2만 5천 원(최대 약 3만 원)이 들어요. 진행할까요?</div>
+      <div class="acts"><button type="button" class="btn primary" id="ai-go">진행</button><button type="button" class="btn ghost" id="ai-no">취소</button></div>
+    </div>
+    <div class="ai-prog" id="ai-prog" aria-live="polite" hidden>
+      <div class="prov-row" id="ai-provs"></div>
+      <div class="line"><span id="ai-elapsed"></span><button type="button" class="btn ghost" id="ai-cancel">분석 취소</button></div>
+    </div>
+    <div class="ai-err" id="ai-err" role="status" hidden></div>
+    <div class="past" id="ai-past" hidden><h3>지난 보고서</h3><ul id="ai-past-list"></ul></div>
+    <div id="ai-report" tabindex="-1"></div>
   </section>
 
   <section class="card">
@@ -285,7 +347,7 @@ async function drawChart() {
   el.replaceChildren(svg.node());
 }
 
-function selectSymbol(sym) { S.selected = sym; drawMap(); drawChart(); $('detail').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' }); }
+function selectSymbol(sym) { S.selected = sym; aiSelect(sym); drawMap(); drawChart(); $('detail').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' }); }
 
 function render() { if (!S.snap) return; drawKpis(); drawLegend(); drawMap(); drawTable(); }
 
@@ -297,7 +359,7 @@ async function poll() {
     S.snap = d; lastOk = Date.now();
     $('demo').hidden = !d.demo; $('err').hidden = true; $('dot').className = 'dot live';
     $('stamp').textContent = '실시간 · ' + new Date(d.at).toLocaleTimeString('ko-KR') + ' 기준 · ' + S.refresh + '초마다 갱신';
-    if (!S.selected && d.positions.length) { S.selected = d3.greatest(d.positions, (p) => p.valueKrw).symbol; drawChartLater(); }
+    if (!S.selected && d.positions.length) { S.selected = d3.greatest(d.positions, (p) => p.valueKrw).symbol; drawChartLater(); aiSelect(S.selected); }
     render();
     if (++chartTick % 12 === 0) drawChart(); // 차트는 약 1분마다
   } catch (e) {
@@ -316,6 +378,179 @@ bindSeg('m-total', 'm-day', 'mode', 'total', 'day', render);
 bindSeg('i-1d', 'i-1m', 'interval', '1d', '1m', drawChart);
 document.querySelectorAll('th[data-k]').forEach((th) => th.onclick = () => { const k = th.dataset.k; S.sortDir = S.sortKey === k ? -S.sortDir : (k === 'name' || k === 'sector' ? 1 : -1); S.sortKey = k; drawTable(); });
 let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { render(); drawChart(); }, 150); });
+
+// ---- AI 분석 ----
+const PROV = { claude: 'Claude', openai: 'ChatGPT', gemini: 'Gemini' };
+const PSTAT = { waiting: '대기', running: '진행 중', done: '완료', failed: '실패', skipped: '키 없음', cancelled: '취소됨' };
+const A = { status: null, job: null, timer: null, tick: null, sym: null, openReport: null };
+const ss = {
+  get(k) { try { return sessionStorage.getItem(k); } catch (_) { return null; } },
+  set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (_) {} },
+};
+const jobKey = (sym) => 'aiJob:' + sym;
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
+const safeUrl = (u) => { try { const x = new URL(u); return x.protocol === 'http:' || x.protocol === 'https:' ? x.href : null; } catch (_) { return null; } };
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? undefined : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  let d = null; try { d = await r.json(); } catch (_) {}
+  if (!r.ok) { const e = new Error((d && d.error) || ('HTTP ' + r.status)); e.status = r.status; throw e; }
+  return d;
+}
+function aiError(msg) { const e = $('ai-err'); e.hidden = !msg; e.textContent = msg || ''; }
+function stopJobTimers() { clearTimeout(A.timer); clearInterval(A.tick); A.timer = A.tick = null; }
+
+async function aiInit() {
+  try { A.status = await api('/api/ai/status'); } catch (_) { A.status = null; }
+  $('ai-note').hidden = !(A.status && A.status.aiDemo);
+}
+
+function aiSelect(sym) {
+  if (A.sym === sym) return;
+  A.sym = sym; A.job = null; A.openReport = null;
+  stopJobTimers();
+  $('ai').hidden = false; $('ai-confirm').hidden = true; $('ai-prog').hidden = true; aiError('');
+  $('ai-report').replaceChildren();
+  setBusy(false);
+  loadPast(sym);
+  const id = ss.get(jobKey(sym));
+  if (id) attachJob(id, sym);
+}
+function setBusy(b) { $('ai-quick').disabled = b; $('ai-deep').disabled = b; if (b) $('ai-confirm').hidden = true; }
+
+async function startAnalysis(mode) {
+  const sym = A.sym; aiError('');
+  setBusy(true);
+  try {
+    const r = await api('/api/analyze', { symbol: sym, mode });
+    ss.set(jobKey(sym), r.jobId);
+    attachJob(r.jobId, sym);
+  } catch (e) { setBusy(false); aiError('분석을 시작하지 못했어요: ' + e.message); }
+}
+
+async function attachJob(id, sym) {
+  stopJobTimers(); A.job = { id, sym, startedAt: Date.now() };
+  setBusy(true); $('ai-prog').hidden = false;
+  await pollJob();
+}
+async function pollJob() {
+  const cur = A.job; if (!cur) return;
+  let v;
+  try { v = await api('/api/jobs/' + encodeURIComponent(cur.id)); }
+  catch (e) {
+    if (A.job !== cur) return;
+    if (e.status === 404) { ss.set(jobKey(cur.sym), null); A.job = null; $('ai-prog').hidden = true; setBusy(false); stopJobTimers(); loadPast(cur.sym); return; }
+    aiError('진행 상황을 불러오지 못했어요: ' + e.message); A.timer = setTimeout(pollJob, 3000); return;
+  }
+  if (A.job !== cur) return;
+  aiError('');
+  cur.startedAt = Date.parse(v.startedAt) || cur.startedAt;
+  drawProgress(v);
+  if (!A.tick) A.tick = setInterval(() => drawElapsed(cur), 1000);
+  if (v.status === 'running' || v.status === 'synthesizing') { A.timer = setTimeout(pollJob, 3000); return; }
+  // 끝남
+  stopJobTimers(); ss.set(jobKey(cur.sym), null); A.job = null; $('ai-prog').hidden = true; setBusy(false);
+  if (v.status === 'done' && v.reportId) { await openReport(v.reportId); loadPast(cur.sym); }
+  else if (v.status === 'cancelled') aiError('분석을 취소했어요.');
+  else aiError('분석에 실패했어요' + (v.error ? ': ' + v.error : '.'));
+}
+function drawProgress(v) {
+  const ids = Object.keys(PROV).filter((k) => v.providers[k]);
+  $('ai-provs').replaceChildren(...ids.map((k) => {
+    const st = v.providers[k].status;
+    const c = el('span', 'pchip ' + st, PROV[k] + ' · ' + (PSTAT[st] || st)); return c;
+  }));
+  if (v.status === 'synthesizing') $('ai-provs').append(el('span', 'pchip running', '보고서 정리 중'));
+  drawElapsed(A.job);
+}
+function drawElapsed(job) {
+  if (!job) return;
+  const s = Math.max(0, Math.floor((Date.now() - job.startedAt) / 1000));
+  $('ai-elapsed').textContent = '경과 ' + Math.floor(s / 60) + '분 ' + String(s % 60).padStart(2, '0') + '초';
+}
+async function cancelJob() {
+  const cur = A.job; if (!cur) return;
+  $('ai-cancel').disabled = true;
+  try { await api('/api/jobs/' + encodeURIComponent(cur.id) + '/cancel', {}); } catch (e) { if (e.status !== 404) aiError('취소하지 못했어요: ' + e.message); }
+  $('ai-cancel').disabled = false;
+  clearTimeout(A.timer); pollJob();
+}
+
+async function loadPast(sym) {
+  let list = [];
+  try { list = await api('/api/reports?symbol=' + encodeURIComponent(sym)); } catch (_) {}
+  if (A.sym !== sym) return;
+  $('ai-past').hidden = !list.length;
+  $('ai-past-list').replaceChildren(...list.map((r) => {
+    const li = document.createElement('li'), b = el('button', null, new Date(r.createdAt).toLocaleString('ko-KR') + ' · ' + (r.mode === 'deep' ? '딥 리서치' : '빠른 분석'));
+    b.type = 'button'; b.dataset.id = r.id; b.setAttribute('aria-current', r.id === A.openReport);
+    b.onclick = () => openReport(r.id); li.append(b); return li;
+  }));
+}
+
+async function openReport(id) {
+  let r;
+  try { r = await api('/api/reports/' + encodeURIComponent(id)); } catch (e) { aiError('보고서를 불러오지 못했어요: ' + e.message); return; }
+  A.openReport = id; aiError('');
+  document.querySelectorAll('#ai-past-list button').forEach((b) => b.setAttribute('aria-current', b.dataset.id === id));
+  const box = $('ai-report'); box.replaceChildren(renderReport(r));
+  box.focus({ preventScroll: true });
+  box.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+}
+
+function renderReport(r) {
+  const root = el('div', 'report');
+  const sec = (title, ...kids) => { const d = document.createElement('div'); d.append(el('h4', null, title), ...kids); root.append(d); return d; };
+  const date = new Date(r.createdAt).toLocaleDateString('ko-KR');
+  root.append(el('h3', null, (r.name || r.symbol) + ' 분석 보고서 (' + date + ', ' + (r.mode === 'deep' ? '딥 리서치' : '빠른 분석') + ')'));
+  const chips = el('div', 'chips');
+  for (const [k, p] of Object.entries(r.providers || {})) if (p && p.limitHit) chips.append(el('span', 'chip', PROV[k] + ': 조사 한도에 닿았음'));
+  if (r.crossChecked === false) chips.append(el('span', 'chip', '교차 검증 못 함'));
+  for (const [k, p] of Object.entries(r.providers || {})) if (p && (p.status === 'failed' || p.status === 'skipped')) chips.append(el('span', 'chip', PROV[k] + ': ' + (PSTAT[p.status])));
+  if (chips.childNodes.length) root.append(chips);
+
+  if (r.raw) { root.append(el('pre', null, r.raw)); }
+  const concl = el('ol', 'concl'); (r.conclusion || []).forEach((t) => concl.append(el('li', null, t)));
+  if (concl.childNodes.length) sec('최종 3줄 결론', concl);
+  if (r.why) sec('① 왜 올랐나·내렸나', el('p', null, r.why));
+  if (r.outlook) {
+    const d = sec('② 앞으로의 전망');
+    for (const [l, k] of [['좋아질 이유', 'up'], ['나빠질 이유', 'down'], ['다가오는 일정', 'events']]) if (r.outlook[k]) { const p = el('p'); p.append(el('b', null, l + ' '), document.createTextNode(String(r.outlook[k]))); d.append(p); }
+  }
+  if (r.risks) sec('③ 위험 요소', el('p', null, r.risks));
+  if (r.views && r.views.length) {
+    const wrap = document.createElement('div');
+    for (const v of r.views) {
+      const row = el('div', 'view'), who = el('div', 'who', PROV[v.provider] || v.provider);
+      const cls = v.stance === '긍정' ? 'pos' : v.stance === '부정' ? 'neg' : 'neu';
+      row.append(who, el('span', 'badge ' + cls, v.stance || '중립'), el('p', null, v.reason)); wrap.append(row);
+    }
+    sec('④ 세 AI의 시각', wrap);
+  }
+  if (r.disagreements) sec('⑤ AI끼리 다른 의견', el('p', null, r.disagreements));
+  if (r.myPosition) sec('내 상황에서 보면', el('p', null, r.myPosition));
+  if (r.summaries) {
+    const d = sec('AI별 3줄 요약');
+    for (const k of Object.keys(PROV)) {
+      const lines = r.summaries[k]; if (!Array.isArray(lines) || !lines.length) continue;
+      d.append(el('b', null, PROV[k])); const ul = el('ul', 'plain'); lines.forEach((t) => ul.append(el('li', null, t))); d.append(ul);
+    }
+  }
+  const srcs = (r.sources || []).map((s) => ({ title: s.title, href: safeUrl(s.url) })).filter((s) => s.href);
+  if (srcs.length) {
+    const ul = el('ul', 'plain');
+    srcs.forEach((s) => { const li = document.createElement('li'), a = el('a', null, s.title || s.href); a.href = s.href; a.target = '_blank'; a.rel = 'noopener noreferrer'; li.append(a); ul.append(li); });
+    sec('출처', ul);
+  }
+  root.append(el('div', 'disc', '투자 판단의 책임은 본인에게 있어요. AI 분석은 참고용이에요.'));
+  return root;
+}
+
+$('ai-quick').onclick = () => startAnalysis('quick');
+$('ai-deep').onclick = () => { $('ai-confirm').hidden = false; $('ai-go').focus(); };
+$('ai-no').onclick = () => { $('ai-confirm').hidden = true; $('ai-deep').focus(); };
+$('ai-go').onclick = () => { $('ai-confirm').hidden = true; startAnalysis('deep'); };
+$('ai-cancel').onclick = cancelJob;
+aiInit();
 
 fetch('/api/config').then((r) => r.json()).then((c) => { S.refresh = c.refreshSeconds || 5; }).catch(() => {}).finally(poll);
 </script>

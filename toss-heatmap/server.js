@@ -332,6 +332,12 @@ if (require.main === module) {
     console.log('  끄려면 이 창에서 Ctrl+C');
     console.log('');
     resumeOnBoot({ cfg, jobs, store });
+    // 숨겨서 켰을 때 stop-hidden.vbs가 이 프로그램만 끌 수 있게 번호(PID)를 남겨요.
+    const pidFile = path.join(ROOT, '.server.pid');
+    try { fs.writeFileSync(pidFile, String(process.pid)); } catch (_) {}
+    const clean = () => { try { if (fs.readFileSync(pidFile, 'utf8') === String(process.pid)) fs.unlinkSync(pidFile); } catch (_) {} };
+    process.on('exit', clean);
+    for (const sig of ['SIGINT', 'SIGTERM', 'SIGBREAK']) process.on(sig, () => process.exit(0));
     if (!process.argv.includes('--no-open')) {
       const { exec } = require('child_process');
       const cmd = process.platform === 'win32' ? 'start "" "' + u + '"' : process.platform === 'darwin' ? 'open ' + u : 'xdg-open ' + u;

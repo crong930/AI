@@ -182,3 +182,15 @@ test('serves the app icon as svg and ico', async () => {
   assert.deepStrictEqual([...buf.subarray(0, 4)], [0, 0, 1, 0]);
   await t.close();
 });
+
+test('launcher scripts are UTF-16LE with BOM so Korean text works in Windows Script Host', () => {
+  const fs = require('fs'); const path = require('path');
+  for (const f of ['start-hidden.vbs', 'stop-hidden.vbs', 'make-shortcuts.vbs']) {
+    const b = fs.readFileSync(path.join(__dirname, '..', f));
+    assert.deepStrictEqual([b[0], b[1]], [0xff, 0xfe], f);
+    const t = b.subarray(2).toString('utf16le');
+    assert.ok(t.includes('Option Explicit'), f);
+  }
+  const start = fs.readFileSync(path.join(__dirname, '..', 'start-hidden.vbs')).subarray(2).toString('utf16le');
+  assert.match(start, /--no-open/);
+});

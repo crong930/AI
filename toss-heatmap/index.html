@@ -397,7 +397,9 @@ const withReason = (c, p) => {
 };
 const safeUrl = (u) => { try { const x = new URL(u); return x.protocol === 'http:' || x.protocol === 'https:' ? x.href : null; } catch (_) { return null; } };
 async function api(path, body) {
-  const r = await fetch(path, body === undefined ? undefined : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  let r;
+  try { r = await fetch(path, body === undefined ? undefined : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
+  catch (_) { throw new Error('프로그램(검은 창)이 꺼져 있는 것 같아요. start-windows.bat으로 다시 켠 뒤 이 화면을 새로고침해 주세요.'); }
   let d = null; try { d = await r.json(); } catch (_) {}
   if (!r.ok) { const e = new Error((d && d.error) || ('HTTP ' + r.status)); e.status = r.status; throw e; }
   return d;

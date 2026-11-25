@@ -1,7 +1,8 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { createServer, makeHttp } = require('../server');
+const { createServer, makeHttp, resumeOnBoot } = require('../server');
+const nodeHttp = require('http');
 const { checkPost } = require('../lib/guard');
 
 function fakes() {
@@ -140,4 +141,33 @@ test('bound http scrubs secret keys from errors', async () => {
   await assert.rejects(
     http({ url: 'https://x', transport: async () => { throw new Error('boom sk-SECRET-123'); } }),
     (e) => !e.message.includes('sk-SECRET-123') && e.message.includes('***'));
+});
+
+function getWithHost(port, p, host) {
+  return new Promise((resolve, reject) => {
+    const req = nodeHttp.request({ host: '127.0.0.1', port, path: p, method: 'GET', headers: { Host: host } }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+    req.on('error', reject); req.end();
+  });
+}
+
+test('DNS rebinding: foreign Host header -> 403, localhost/127.0.0.1 -> 200', async () => {
+  const t = await boot();
+  try {
+  assert.strictEqual(await getWithHost(t.port, '/api/snapshot', 'evil.com:' + t.port), 403);
+  assert.strictEqual(await getWithHost(t.port, '/api/snapshot', 'evil.com'), 403);
+  assert.strictEqual(await getWithHost(t.port, '/api/snapshot', 'localhost:' + (t.port + 1)), 403);
+  assert.strictEqual(await getWithHost(t.port, '/api/snapshot', 'localhost:' + t.port), 200);
+  assert.strictEqual(await getWithHost(t.port, '/api/snapshot', '127.0.0.1:' + t.port), 200);
+  assert.strictEqual((await fetch(t.url('/api/snapshot'))).status, 200);
+  } finally { await t.close(); }
+});
+
+test('resume runs whenever AI keys exist, even in Toss demo mode', async () => {
+  let n = 0;
+  const jobs = { resumeAll: async () => { n++; } };
+  const store = { loadJobs: () => ({ j1: {} }) };
+  await resumeOnBoot({ cfg: { demo: true, aiDemo: false }, jobs, store, log: () => {} });
+  assert.strictEqual(n, 1);
+  await resumeOnBoot({ cfg: { demo: false, aiDemo: true }, jobs, store, log: () => {} });
+  assert.strictEqual(n, 1);
 });

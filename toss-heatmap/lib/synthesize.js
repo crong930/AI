@@ -34,21 +34,24 @@ const empty = () => ({ conclusion: [], why: '', outlook: { up: '', down: '', eve
 
 async function synthesize({ ctx, results, writers, http, signal }) {
   const done = results.filter((r) => r.status === 'done' && r.text);
-  if (!done.length) throw new Error('모든 AI가 실패했어요');
+  if (!done.length) {
+    const reasons = results.map((r) => (LABEL[r.provider] || r.provider) + ': ' + (r.error || r.status || '알 수 없는 이유'));
+    throw new Error('모든 AI가 실패했어요' + (reasons.length ? ' (' + reasons.join(', ') + ')' : ''));
+  }
   const base = { crossChecked: done.length >= 2, sources: dedupeSources(done.flatMap((r) => r.sources || [])) };
   const prompt = synthesisPrompt(ctx, done);
-  let lastText = null; const errors = [];
+  const errors = [];
   for (const w of writers) {
     if (signal && signal.aborted) break;
     try {
       const text = await w.provider.complete({ key: w.key, model: w.model, prompt, http, signal });
-      lastText = text;
       const parsed = parseLenient(text);
       if (parsed) return { writer: w.provider.id, ...base, ...normalize(parsed) };
+      errors.push((LABEL[w.provider.id] || w.provider.id) + ': 결과 형식을 읽을 수 없어요');
     } catch (e) { errors.push((LABEL[w.provider.id] || w.provider.id) + ': ' + e.message); }
   }
-  // 최종 보고서를 만들지 못하면 받은 내용을 그대로라도 보여줘요.
-  const raw = lastText && lastText.trim() ? lastText : done.map((r) => `## ${LABEL[r.provider] || r.provider} 보고서\n\n${r.text}`).join('\n\n');
+  // 최종 보고서를 만들지 못하면 각 AI 보고서를 그대로라도 보여줘요 (깨진 JSON은 보여주지 않아요).
+  const raw = done.map((r) => `## ${LABEL[r.provider] || r.provider} 보고서\n\n${r.text}`).join('\n\n');
   return { writer: null, ...base, ...empty(), raw, synthesisErrors: errors };
 }
 

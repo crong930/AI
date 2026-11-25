@@ -37,7 +37,7 @@ async function run({ key, model, mode, prompt, limits, signal, http, resume, onH
     }
     return await runBackground({
       provider: 'gemini', resume, onHandle, signal, limits, pollMs,
-      start: async () => (await http({ method: 'POST', url: BASE, headers: hdr(key), signal, body: {
+      start: async () => (await http({ method: 'POST', url: BASE, headers: hdr(key), body: {
         agent: model, input: prompt, background: true, store: true,
         agent_config: { type: 'deep-research', thinking_summaries: 'none', visualization: 'off', collaborative_planning: false },
       } })).json.id,

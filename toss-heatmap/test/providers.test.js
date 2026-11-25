@@ -195,3 +195,51 @@ test('scrub removes keys from errors', async () => {
     (e) => e instanceof HttpError && e.status === 401 && !e.message.includes('sk-test-123'),
   );
 });
+
+test('claude multiple pause_turn keeps one assistant turn with all segments', async () => {
+  const seg1 = [{ type: 'text', text: '첫째 ' }, { type: 'server_tool_use', id: 's1', name: 'web_search', input: {} }];
+  const seg2 = [{ type: 'web_search_tool_result', tool_use_id: 's1', content: [] }, { type: 'text', text: '둘째 ' }];
+  const http = fakeHttp([{ stop_reason: 'pause_turn', content: seg1 }, { stop_reason: 'pause_turn', content: seg2 }, textMsg('셋째')]);
+  const r = await claude.run({ key: 'ak', model: 'm', mode: 'quick', prompt: 'p', limits: LIMITS, http });
+  assert.strictEqual(http.calls.length, 3);
+  const msgs = http.calls[2].body.messages;
+  assert.strictEqual(msgs.length, 2);
+  assert.strictEqual(msgs[1].role, 'assistant');
+  assert.deepStrictEqual(msgs[1].content, [...seg1, ...seg2]);
+  assert.strictEqual(r.text, '첫째 둘째 셋째');
+});
+
+test('claude deep web_fetch caps content tokens', async () => {
+  const http = fakeHttp([textMsg('보고서')]);
+  await claude.run({ key: 'ak', model: 'm', mode: 'deep', prompt: 'p', limits: LIMITS, http });
+  assert.strictEqual(http.calls[0].body.tools.find((t) => t.name === 'web_fetch').max_content_tokens, 10000);
+});
+
+test('claude complete uses 32000 max_tokens and throws on max_tokens stop', async () => {
+  const http = fakeHttp([{ stop_reason: 'max_tokens', content: [{ type: 'text', text: '{"conclusion":' }] }]);
+  await assert.rejects(claude.complete({ key: 'ak', model: 'm', prompt: 'p', http }));
+  assert.strictEqual(http.calls[0].body.max_tokens, 32000);
+});
+
+for (const [name, prov, id, cancelSuffix] of [['openai', openai, 'r9', '/v1/responses/r9/cancel'], ['gemini', gemini, 'g9', '/interactions/g9/cancel']]) {
+  test(name + ' abort during start → no signal on create, cancel called with returned id', async () => {
+    const ac = new AbortController();
+    const calls = [];
+    const h = async (opts) => {
+      calls.push(opts);
+      if (opts.url.endsWith('/cancel')) return { status: 200, json: {} };
+      if (opts.method === 'POST') {
+        assert.strictEqual(opts.signal, undefined, 'create request must not carry the abort signal');
+        ac.abort();
+        return { status: 200, json: { id, status: 'queued' } };
+      }
+      return { status: 200, json: { id, status: 'in_progress' } };
+    };
+    let handle;
+    const r = await prov.run({ key: 'k', model: 'm', mode: 'deep', prompt: 'p', limits: LIMITS, http: h, pollMs: 1, signal: ac.signal, onHandle: (x) => { handle = x; } });
+    assert.strictEqual(r.status, 'cancelled');
+    assert.ok(calls.some((c) => c.method === 'POST' && c.url.endsWith(cancelSuffix)));
+    assert.ok(!calls.some((c) => c.method === 'GET'));
+    assert.strictEqual(handle, undefined);
+  });
+}

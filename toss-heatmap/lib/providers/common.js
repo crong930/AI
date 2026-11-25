@@ -27,7 +27,9 @@ async function runBackground({ provider, start, poll, cancel, resume, onHandle, 
   const t0 = Date.now();
   let handle = resume;
   if (!handle) {
+    // 생성 요청에는 취소 신호를 넘기지 않아요: 도중에 끊으면 작업 id를 몰라 취소할 수 없어요.
     handle = await start();
+    if (signal && signal.aborted) { await Promise.resolve().then(() => cancel(handle)).catch(() => {}); return cancelled(provider); }
     if (onHandle) onHandle(handle);
   }
   const deadline = limits && limits.enabled ? t0 + limits.timeoutMinutes * 60000 : Infinity;

@@ -18,15 +18,17 @@ async function call(http, key, body, signal, timeoutMs) {
 async function run({ key, model, mode, prompt, limits, signal, http }) {
   const deep = mode === 'deep';
   const tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: deep ? (limits.enabled ? limits.claudeMaxSearches : 60) : 5 }];
-  if (deep) tools.push({ type: 'web_fetch_20260209', name: 'web_fetch', max_uses: limits.enabled ? 20 : 40 });
+  if (deep) tools.push({ type: 'web_fetch_20260209', name: 'web_fetch', max_uses: limits.enabled ? 20 : 40, max_content_tokens: 10000 });
   const base = { model, max_tokens: 32000, thinking: { type: 'adaptive' }, output_config: { effort: deep ? 'high' : 'medium' }, tools };
   const messages = [{ role: 'user', content: prompt }];
   const sources = []; let limitHit = false; let resp;
+  // pause_turn이 여러 번 와도 assistant 턴은 하나로 이어 붙여요.
+  const acc = [];
   const t0 = Date.now();
   const deadline = limits.enabled ? t0 + limits.timeoutMinutes * 60000 : Infinity;
-  const textOf = (r) => ((r && r.content) || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+  const textOf = (blocks) => blocks.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
   const timedOut = () => {
-    const text = textOf(resp);
+    const text = textOf(acc);
     if (text) return { provider: 'claude', status: 'done', text, sources: dedupeSources(sources), limitHit: true };
     return failed('claude', '시간 한도(' + limits.timeoutMinutes + '분)에 닿아 멈췄어요', { limitHit: true });
   };
@@ -52,13 +54,14 @@ async function run({ key, model, mode, prompt, limits, signal, http }) {
         if (signal) signal.removeEventListener('abort', onAbort);
       }
       resp = r;
+      acc.push(...(resp.content || []));
       for (const b of resp.content || []) {
         if (b.type !== 'web_search_tool_result') continue;
         if (Array.isArray(b.content)) for (const r of b.content) sources.push({ title: r.title, url: r.url });
         else if (b.content && b.content.error_code === 'max_uses_exceeded') limitHit = true;
       }
       if (resp.stop_reason !== 'pause_turn') break;
-      messages.splice(1, messages.length - 1, { role: 'assistant', content: resp.content });
+      messages.splice(1, messages.length - 1, { role: 'assistant', content: acc.slice() });
     }
   } catch (e) {
     if (signal && signal.aborted) return cancelled('claude');
@@ -66,13 +69,15 @@ async function run({ key, model, mode, prompt, limits, signal, http }) {
   }
   if (resp.stop_reason === 'refusal') return failed('claude', 'Claude가 이 요청에 답하지 않았어요');
   if (resp.stop_reason === 'max_tokens') limitHit = true;
-  const text = (resp.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+  const text = textOf(acc);
   if (!text) return failed('claude', '빈 응답이 왔어요');
   return { provider: 'claude', status: 'done', text, sources: dedupeSources(sources), limitHit };
 }
 
 async function complete({ key, model, prompt, http, signal }) {
-  const resp = await call(http, key, { model, max_tokens: 16000, thinking: { type: 'adaptive' }, output_config: { effort: 'high' }, messages: [{ role: 'user', content: prompt }] }, signal);
+  const resp = await call(http, key, { model, max_tokens: 32000, thinking: { type: 'adaptive' }, output_config: { effort: 'high' }, messages: [{ role: 'user', content: prompt }] }, signal);
+  // 잘린 JSON은 쓸 수 없으니 오류로 돌려서 다음 AI가 쓰게 해요.
+  if (resp && resp.stop_reason === 'max_tokens') throw new Error('Claude 응답이 길이 한도에서 잘렸어요');
   return (resp.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
 }
 

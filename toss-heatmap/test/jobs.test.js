@@ -194,3 +194,60 @@ test('job view has no secrets', async () => {
   for (const k of config.secrets()) assert.ok(!s.includes(k));
   assert.strictEqual(mgr.get('unknown'), null);
 });
+
+function captureWarn() {
+  const lines = []; const orig = console.warn;
+  console.warn = (...a) => { lines.push(a.map(String).join(' ')); };
+  return { lines, restore: () => { console.warn = orig; } };
+}
+function captureUncaught() {
+  const errs = [];
+  const h = (e) => errs.push(e);
+  process.on('uncaughtException', h); process.on('unhandledRejection', h);
+  return { errs, restore: () => { process.off('uncaughtException', h); process.off('unhandledRejection', h); } };
+}
+
+test('provider failure is logged with keys scrubbed', async () => {
+  const w = captureWarn();
+  try {
+    const { fakes, mgr } = setup();
+    const { jobId } = mgr.start(ctx, 'quick');
+    await tick();
+    fakes.openai.pending[0].reject(new Error('bad key ' + KEYS.openai));
+    fakes.claude.pending[0].resolve({ provider: 'claude', status: 'failed', error: 'HTTP 401 ' + KEYS.claude, sources: [], limitHit: false });
+    fakes.gemini.finish();
+    await waitFor(() => mgr.get(jobId).status === 'done');
+    const all = w.lines.join('\n');
+    assert.ok(w.lines.some((l) => l.includes('ChatGPT') && l.includes('bad key ***')), all);
+    assert.ok(w.lines.some((l) => l.includes('Claude') && l.includes('HTTP 401')), all);
+    for (const k of Object.values(KEYS)) assert.ok(!all.includes(k));
+  } finally { w.restore(); }
+});
+
+test('saveJobs throwing never breaks the job', async () => {
+  const w = captureWarn(); const u = captureUncaught();
+  try {
+    const { fakes, store, mgr } = setup();
+    store.saveJobs = () => { throw Object.assign(new Error('EPERM rename'), { code: 'EPERM' }); };
+    const { jobId } = mgr.start(ctx, 'deep');
+    await tick();
+    assert.doesNotThrow(() => fakes.openai.calls[0].onHandle('resp_1'));
+    fakes.claude.finish(); fakes.openai.finish(); fakes.gemini.finish();
+    await waitFor(() => mgr.get(jobId).status === 'done');
+    assert.strictEqual(store.saved.length, 1);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepStrictEqual(u.errs, []);
+  } finally { w.restore(); u.restore(); }
+});
+
+test('store.save throwing in demo mode → job failed, no uncaught exception', async () => {
+  const w = captureWarn(); const u = captureUncaught();
+  try {
+    const { store, mgr } = setup({ ai: { claude: null, openai: null, gemini: null }, aiDemo: true });
+    store.save = () => { throw new Error('disk full'); };
+    const { jobId } = mgr.start(ctx, 'quick');
+    await new Promise((r) => setTimeout(r, 40));
+    assert.strictEqual(mgr.get(jobId).status, 'failed');
+    assert.deepStrictEqual(u.errs, []);
+  } finally { w.restore(); u.restore(); }
+});

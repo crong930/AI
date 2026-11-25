@@ -257,6 +257,10 @@ function createServer(deps = {}) {
   const snap = deps.snapshot || snapshot;
   const demoSnap = deps.demoSnapshot || demoSnapshot;
   const srv = http.createServer(async (req, res) => {
+    // DNS 리바인딩 막기: 이 PC 주소(localhost/127.0.0.1 + 실제 포트)로 들어온 요청만 받아요.
+    const port = srv.address().port;
+    const host = String(req.headers.host || '').toLowerCase();
+    if (host !== 'localhost:' + port && host !== '127.0.0.1:' + port) return send(res, 403, { error: '이 컴퓨터의 주소(localhost)로만 열 수 있어요.' });
     const url = new URL(req.url, 'http://localhost');
     try {
       if (req.method === 'POST' && (url.pathname === '/api/analyze' || /^\/api\/jobs\/[^/]+\/cancel$/.test(url.pathname))) {
@@ -301,7 +305,14 @@ function createServer(deps = {}) {
   return srv;
 }
 
-module.exports = { createServer, makeHttp };
+// AI 키가 있으면(토스가 데모 모드여도) 멈췄던 분석을 이어받아요.
+function resumeOnBoot({ cfg: c, jobs, store, log = console.log }) {
+  if (c.aiDemo) return Promise.resolve();
+  const n = Object.keys(store.loadJobs()).length;
+  return jobs.resumeAll().then(() => { if (n) log('  이어받은 분석 ' + n + '개'); }).catch((e) => console.warn('[이어받기] ' + e.message));
+}
+
+module.exports = { createServer, makeHttp, resumeOnBoot };
 
 if (require.main === module) {
   const store = createStore(path.join(ROOT, 'reports'));
@@ -318,7 +329,7 @@ if (require.main === module) {
     console.log('  브라우저에서 열기: ' + u);
     console.log('  끄려면 이 창에서 Ctrl+C');
     console.log('');
-    if (!cfg.demo) { const n = Object.keys(store.loadJobs()).length; jobs.resumeAll().then(() => console.log('  이어받은 분석 ' + n + '개')).catch((e) => console.warn('[이어받기] ' + e.message)); }
+    resumeOnBoot({ cfg, jobs, store });
     if (!process.argv.includes('--no-open')) {
       const { exec } = require('child_process');
       const cmd = process.platform === 'win32' ? 'start "" "' + u + '"' : process.platform === 'darwin' ? 'open ' + u : 'xdg-open ' + u;

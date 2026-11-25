@@ -72,3 +72,24 @@ test('markdown has sections', () => {
   for (const s of ['최종 3줄 결론', '왜 올랐나/내렸나', '앞으로의 전망', '위험 요소', 'AI끼리 다른 의견', '투자 판단의 책임은 본인에게 있어요', '조사 한도에 닿았음', '교차 검증 못 함', 'https://s'])
     assert.ok(md.includes(s), 'missing ' + s);
 });
+
+test('writeAtomic retries rename on EPERM/EBUSY (Windows lock)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rep-'));
+  const store = createStore(dir);
+  const orig = fs.renameSync; let n = 0;
+  fs.renameSync = (a, b) => { n++; if (n <= 2) throw Object.assign(new Error('locked'), { code: n === 1 ? 'EPERM' : 'EBUSY' }); return orig(a, b); };
+  try { store.saveJobs({ j1: { jobId: 'j1' } }); } finally { fs.renameSync = orig; }
+  assert.strictEqual(n, 3);
+  assert.deepStrictEqual(store.loadJobs(), { j1: { jobId: 'j1' } });
+});
+
+test('writeAtomic falls back to direct write when rename keeps failing', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rep-'));
+  const store = createStore(dir);
+  const orig = fs.renameSync; let n = 0;
+  fs.renameSync = () => { n++; throw Object.assign(new Error('locked'), { code: 'EACCES' }); };
+  try { store.saveJobs({ j2: { jobId: 'j2' } }); } finally { fs.renameSync = orig; }
+  assert.ok(n >= 3 && n <= 10);
+  assert.deepStrictEqual(store.loadJobs(), { j2: { jobId: 'j2' } });
+  assert.ok(!fs.existsSync(path.join(dir, '.jobs.json.tmp')));
+});

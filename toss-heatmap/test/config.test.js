@@ -57,3 +57,10 @@ test('missing file gives demo defaults', () => {
   assert.strictEqual(c.demo, true);
   assert.strictEqual(c.port, 8787);
 });
+
+test('config.json with UTF-8 BOM parses', () => {
+  const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-')), 'config.json');
+  fs.writeFileSync(p, '\uFEFF' + JSON.stringify({ anthropicApiKey: 'sk-ant-x' }));
+  const c = loadConfig({ path: p, env: {}, argv: [] });
+  assert.strictEqual(c.ai.claude, 'sk-ant-x');
+});

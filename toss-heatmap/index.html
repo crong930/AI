@@ -85,7 +85,7 @@ tr:last-child td { border-bottom: 0; }
 .ai-confirm .acts { display: flex; gap: 8px; flex-wrap: wrap; }
 .ai-prog { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
 .prov-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.pchip { font-size: 12px; padding: 4px 9px; border-radius: 999px; background: #1b2025; border: 1px solid #39424a; color: var(--muted); }
+.pchip { overflow-wrap: anywhere; font-size: 12px; padding: 4px 9px; border-radius: 999px; background: #1b2025; border: 1px solid #39424a; color: var(--muted); }
 .pchip.running { color: var(--accent); border-color: var(--accent); }
 .pchip.done { color: var(--up); border-color: #1f6b36; }
 .pchip.failed { color: var(--down); border-color: #7a2a2d; }
@@ -104,7 +104,7 @@ tr:last-child td { border-bottom: 0; }
 .report .concl { background: #1a2024; border-radius: 6px; padding: 10px 12px 10px 12px; }
 .report .concl li { font-size: 14px; font-weight: 500; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #2a2414; border: 1px solid #4a3d1c; color: #e0bb5f; }
+.chip { overflow-wrap: anywhere; font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #2a2414; border: 1px solid #4a3d1c; color: #e0bb5f; }
 .view { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .view:last-child { border-bottom: 0; }
 .view .who { min-width: 64px; font-size: 12px; font-weight: 600; }
@@ -160,7 +160,7 @@ tr:last-child td { border-bottom: 0; }
       <button type="button" class="btn" id="ai-deep">🔬 딥 리서치 (5~20분, 약 1만~2만 5천 원)</button>
     </div>
     <div class="ai-confirm" id="ai-confirm" role="alertdialog" aria-label="딥 리서치 확인" hidden>
-      <div>딥 리서치는 약 1만~2만 5천 원(최대 약 3만 원)이 들어요. 진행할까요?</div>
+      <div>딥 리서치는 보통 1만~2만 5천 원이 들어요. 한도를 걸어 두었지만 드물게 더 나올 수 있어요. 진행할까요?</div>
       <div class="acts"><button type="button" class="btn primary" id="ai-go">진행</button><button type="button" class="btn ghost" id="ai-no">취소</button></div>
     </div>
     <div class="ai-prog" id="ai-prog" aria-live="polite" hidden>
@@ -389,6 +389,11 @@ const ss = {
 };
 const jobKey = (sym) => 'aiJob:' + sym;
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
+// 실패 이유(서버가 키를 지운 글)를 칩에 붙여요. 길면 줄이고 전체는 마우스를 올리면 보여요.
+const withReason = (c, p) => {
+  if (!p || !p.error || p.status === 'skipped') return c;
+  const why = String(p.error); c.textContent += ': ' + (why.length > 120 ? why.slice(0, 120) + '…' : why); c.title = why; return c;
+};
 const safeUrl = (u) => { try { const x = new URL(u); return x.protocol === 'http:' || x.protocol === 'https:' ? x.href : null; } catch (_) { return null; } };
 async function api(path, body) {
   const r = await fetch(path, body === undefined ? undefined : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -457,7 +462,7 @@ function drawProgress(v) {
   const ids = Object.keys(PROV).filter((k) => v.providers[k]);
   $('ai-provs').replaceChildren(...ids.map((k) => {
     const st = v.providers[k].status;
-    const c = el('span', 'pchip ' + st, PROV[k] + ' · ' + (PSTAT[st] || st)); return c;
+    const c = el('span', 'pchip ' + st, PROV[k] + ' · ' + (PSTAT[st] || st)); return st === 'failed' ? withReason(c, v.providers[k]) : c;
   }));
   if (v.status === 'synthesizing') $('ai-provs').append(el('span', 'pchip running', '보고서 정리 중'));
   drawElapsed(A.job);
@@ -505,7 +510,7 @@ function renderReport(r) {
   const chips = el('div', 'chips');
   for (const [k, p] of Object.entries(r.providers || {})) if (p && p.limitHit) chips.append(el('span', 'chip', PROV[k] + ': 조사 한도에 닿았음'));
   if (r.crossChecked === false) chips.append(el('span', 'chip', '교차 검증 못 함'));
-  for (const [k, p] of Object.entries(r.providers || {})) if (p && (p.status === 'failed' || p.status === 'skipped')) chips.append(el('span', 'chip', PROV[k] + ': ' + (PSTAT[p.status])));
+  for (const [k, p] of Object.entries(r.providers || {})) if (p && (p.status === 'failed' || p.status === 'skipped')) chips.append(withReason(el('span', 'chip', PROV[k] + ': ' + (PSTAT[p.status])), p));
   if (chips.childNodes.length) root.append(chips);
 
   if (r.raw) { root.append(el('pre', null, r.raw)); }

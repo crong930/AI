@@ -33,7 +33,7 @@ async function run({ key, model, mode, prompt, limits, signal, http, resume, onH
       start: async () => {
         const body = { model, input: prompt, background: true, tools: [{ type: 'web_search_preview' }] };
         if (maxCalls) body.max_tool_calls = maxCalls;
-        return (await http({ method: 'POST', url: BASE, headers: hdr(key), body, signal })).json.id;
+        return (await http({ method: 'POST', url: BASE, headers: hdr(key), body })).json.id;
       },
       poll: async (id) => {
         const { json } = await http({ method: 'GET', url: BASE + '/' + encodeURIComponent(id), headers: hdr(key) });

@@ -12,10 +12,22 @@ function stamp(iso) {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
+const RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const pauseMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+// Windows에서는 백신·검색 색인이 파일을 잠깐 잡고 있어 이름 바꾸기가 실패할 수 있어요.
+// 몇 번 기다렸다 다시 해 보고, 그래도 안 되면 파일에 바로 써요.
 function writeAtomic(file, text) {
   const tmp = file + '.tmp';
   fs.writeFileSync(tmp, text);
-  fs.renameSync(tmp, file);
+  for (let i = 0; i < 5; i++) {
+    try { fs.renameSync(tmp, file); return; } catch (e) {
+      if (!RETRY_CODES.has(e && e.code)) throw e;
+      pauseMs(50);
+    }
+  }
+  fs.writeFileSync(file, text);
+  try { fs.unlinkSync(tmp); } catch (_) {}
 }
 
 function createStore(dir) {

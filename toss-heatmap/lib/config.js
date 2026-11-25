@@ -22,7 +22,8 @@ function cleanKey(v) {
 // 형식이 잘못된 config.json이면 Error를 던져요 (server.js가 안내 후 종료).
 function loadConfig({ path, env = {}, argv = [] }) {
   let cfg = {};
-  if (path && fs.existsSync(path)) cfg = JSON.parse(fs.readFileSync(path, 'utf8'));
+  // Windows 메모장은 파일 앞에 BOM(\uFEFF)을 붙일 수 있어서 떼어내요.
+  if (path && fs.existsSync(path)) cfg = JSON.parse(fs.readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
   const out = { ...cfg };
   out.clientId = cleanKey(env.TOSS_CLIENT_ID) || cleanKey(cfg.clientId) || '';
   out.clientSecret = cleanKey(env.TOSS_CLIENT_SECRET) || cleanKey(cfg.clientSecret) || '';

@@ -40,7 +40,9 @@ test('malformed JSON wrapped in prose still parses', async () => {
 
 test('all writers garbage → raw set', async () => {
   const r = await synthesize({ ctx, results: [done('claude'), done('openai')], writers: [writer('claude', async () => 'nope'), writer('openai', async () => '그냥 글')] });
-  assert.strictEqual(r.raw, '그냥 글');
+  // 의도된 변경: 깨진 JSON 대신 각 AI 보고서를 이어 붙여 보여줘요.
+  assert.strictEqual(r.raw, '## Claude 보고서\n\nclaude 보고서\n\n## ChatGPT 보고서\n\nopenai 보고서');
+  assert.ok(!r.raw.includes('그냥 글'));
   assert.deepStrictEqual(r.conclusion, []);
 });
 
@@ -52,4 +54,12 @@ test('no writers available → raw is joined provider texts', async () => {
 
 test('no done results → throws', async () => {
   await assert.rejects(synthesize({ ctx, results: [{ provider: 'claude', status: 'failed', sources: [] }], writers: [] }), /모든 AI가 실패했어요/);
+});
+
+test('no done results → error lists each AI reason', async () => {
+  await assert.rejects(synthesize({ ctx, results: [
+    { provider: 'claude', status: 'failed', sources: [], error: 'HTTP 401' },
+    { provider: 'openai', status: 'failed', sources: [], error: '시간 한도' },
+    { provider: 'gemini', status: 'cancelled', sources: [] }], writers: [] }),
+  (e) => /^모든 AI가 실패했어요/.test(e.message) && e.message.includes('Claude: HTTP 401') && e.message.includes('ChatGPT: 시간 한도'));
 });

@@ -2,7 +2,7 @@
 // 분석 작업 관리: 세 AI를 동시에 돌리고, 같은 종목 중복을 막고, 취소/재시작 후 이어받기를 해요.
 const crypto = require('crypto');
 const { demoReport } = require('./demo-report');
-const { researchPrompt } = require('./prompts');
+const { researchPrompt, LABEL } = require('./prompts');
 
 const ORDER = ['claude', 'openai', 'gemini'];
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
@@ -21,7 +21,8 @@ function createJobManager({ config, providers, synthesize, store, http, now = ()
   function persist() {
     const out = {};
     for (const j of active.values()) out[j.id] = { jobId: j.id, symbol: j.symbol, mode: j.mode, ctx: j.ctx, handles: { ...j.handles } };
-    store.saveJobs(out);
+    // 저장이 실패해도(Windows 파일 잠금 등) 분석은 계속해요. 이어받기만 안 될 뿐이에요.
+    try { store.saveJobs(out); } catch (e) { console.warn('[분석] 진행 상태 저장 실패: ' + scrub(e && e.message)); }
   }
 
   function finish(job, status, extra = {}) {
@@ -41,7 +42,9 @@ function createJobManager({ config, providers, synthesize, store, http, now = ()
     active.set(job.symbol, job);
     persist();
     (config.aiDemo ? runDemo : runReal)(job).catch((e) => {
-      if (job.status === 'running' || job.status === 'synthesizing') finish(job, 'failed', { error: scrub(e.message) });
+      try {
+        if (job.status === 'running' || job.status === 'synthesizing') finish(job, 'failed', { error: scrub(e && e.message) });
+      } catch (e2) { console.warn('[분석] 작업 마무리 실패: ' + scrub(e2 && e2.message)); }
     });
     return job;
   }
@@ -74,6 +77,7 @@ function createJobManager({ config, providers, synthesize, store, http, now = ()
       if (job.status === 'cancelled') return r;
       const p = { status: r.status, limitHit: !!r.limitHit };
       if (r.error) p.error = scrub(r.error);
+      if (r.status === 'failed') console.warn('[분석] ' + (LABEL[id] || id) + ' 실패: ' + (p.error || '이유 없음'));
       job.providers[id] = p;
       return r;
     }));
@@ -99,8 +103,12 @@ function createJobManager({ config, providers, synthesize, store, http, now = ()
         job.status = 'synthesizing';
       }, demoDelayMs / 2);
       const end = setTimeout(() => {
-        const final = demoReport(job.ctx, job.mode);
-        finish(job, 'done', { reportId: store.save(buildReport(job, final, [])) });
+        try {
+          const final = demoReport(job.ctx, job.mode);
+          finish(job, 'done', { reportId: store.save(buildReport(job, final, [])) });
+        } catch (e) {
+          try { finish(job, 'failed', { error: '보고서를 저장하지 못했어요: ' + scrub(e && e.message) }); } catch (_) {}
+        }
         resolve();
       }, demoDelayMs);
       job.timers.push(half, end);

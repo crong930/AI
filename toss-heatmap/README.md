@@ -38,8 +38,24 @@
    - Claude: https://console.anthropic.com
    - ChatGPT(OpenAI): https://platform.openai.com
    - Gemini: https://aistudio.google.com — 꼭 **결제가 켜진(유료) 키**를 쓰세요. 무료 키는 입력한 내용이 AI 학습에 쓰일 수 있어요.
+   - **각 사이트(Anthropic, OpenAI, Google)의 결제 설정에서 월 사용 한도(spend limit)를 꼭 걸어 두세요.** 프로그램에도 한도가 있지만, 사이트 한도가 마지막 안전장치예요.
 2. 이 폴더의 `config.json`을 **메모장**으로 열어요. (우클릭 → 연결 프로그램 → 메모장)
 3. `anthropicApiKey`, `openaiApiKey`, `geminiApiKey`의 **따옴표 사이**에 받은 키를 붙여넣어요. 안 쓰는 AI는 그대로 두면 돼요.
+   - 예전에 만든 `config.json`에 이 세 줄이 없다면, `"clientSecret": "..."` 줄 끝에 **쉼표(,)가 있는지 확인**하고 그 바로 아래에 다음 세 줄을 그대로 복사해 넣어요.
+     ```
+       "anthropicApiKey": "여기에 Claude API 키 붙여넣기",
+       "openaiApiKey": "여기에 ChatGPT(OpenAI) API 키 붙여넣기",
+       "geminiApiKey": "여기에 Gemini API 키 붙여넣기",
+     ```
+     넣은 뒤 모습은 이래요 (마지막 항목 뒤에는 쉼표가 없어야 해요):
+     ```
+       "clientSecret": "내 Client Secret",
+       "anthropicApiKey": "sk-ant-...",
+       "openaiApiKey": "sk-...",
+       "geminiApiKey": "AIza...",
+       "refreshSeconds": 5
+     ```
+   - 실행했을 때 검은 창에 **"config.json 형식이 잘못됐어요"**가 나오면 쉼표(,)나 따옴표(")가 빠졌을 가능성이 커요. 줄 끝 쉼표와 따옴표 짝을 확인해 주세요.
 4. 저장(Ctrl+S)하고, 검은 창을 닫은 뒤 `start-windows.bat`을 다시 실행해요.
 
 **AI에게 보내는 정보**: 종목 이름/심볼, 시장, 현재가, 오늘 등락률, 내 평균 매수가, 수익률, 포트폴리오 내 비중(%)
@@ -48,10 +64,10 @@
 
 **두 가지 분석**
 - **빠른 분석**: 약 1~2분, 수백 원 정도예요.
-- **딥 리서치**: 약 5~20분, 보통 약 1만~2만 5천 원, 최대 약 3만 원이에요. 시작 전에 비용 확인 창이 뜨고, 도중에 취소 버튼으로 멈출 수 있어요. 프로그램을 껐다 켜도 진행 중이던 분석은 이어져요.
+- **딥 리서치**: 약 5~20분, 보통 1만~2만 5천 원이에요. 한도를 걸어 두었지만 드물게 더 나올 수 있어요. 시작 전에 비용 확인 창이 뜨고, 도중에 취소 버튼으로 멈출 수 있어요. 프로그램을 껐다 켜면 ChatGPT·Gemini 딥 리서치는 이어받고, Claude 부분은 처음부터 다시 실행돼요.
 
 **한도 바꾸기** (`config.json`)
-- `deepResearchLimit`: `enabled`(딥 리서치 사용 여부, 기본 true), `claudeMaxSearches`(기본 30), `openaiMaxToolCalls`(기본 40), `timeoutMinutes`(기본 30). 예: `"deepResearchLimit": { "enabled": true, "claudeMaxSearches": 20 }`
+- `deepResearchLimit`: `enabled`(비용 한도 사용 여부, 기본 true — 끄면 한도 없이 돌아서 비용이 더 나올 수 있어요), `claudeMaxSearches`(기본 30), `openaiMaxToolCalls`(기본 40), `timeoutMinutes`(기본 30). 예: `"deepResearchLimit": { "enabled": true, "claudeMaxSearches": 20 }`
 - `models`: 쓰는 모델 이름. `claudeQuick`, `claudeDeep`, `openaiQuick`, `openaiDeep`, `geminiQuick`, `geminiDeep`. 예: `"models": { "openaiQuick": "gpt-5" }`
 
 **보고서 저장 위치**: 이 폴더의 `reports/` 안에 보고서마다 `.json`과 `.md` 파일이 생겨요. 화면의 **지난 보고서**에서 다시 열 수 있어요.

@@ -6,6 +6,12 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { requestJson } = require('./lib/http');
+const { createStore } = require('./lib/report-store');
+const { buildContext } = require('./lib/context');
+const { createJobManager } = require('./lib/jobs');
+const { synthesize } = require('./lib/synthesize');
+const { checkPost, MAX_BODY } = require('./lib/guard');
 
 const ROOT = __dirname;
 const API = 'https://openapi.tossinvest.com';
@@ -229,32 +235,95 @@ const send = (res, status, body, type = 'application/json; charset=utf-8') => {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
 };
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://localhost');
-  try {
-    if (req.method !== 'GET') return send(res, 405, { error: '조회만 지원해요.' });
-    if (url.pathname === '/' || url.pathname === '/index.html') return send(res, 200, fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), 'text/html; charset=utf-8');
-    if (url.pathname === '/d3.min.js') return send(res, 200, fs.readFileSync(path.join(ROOT, 'd3.min.js'), 'utf8'), 'text/javascript; charset=utf-8');
-    if (url.pathname === '/api/config') return send(res, 200, { refreshSeconds: cfg.refreshSeconds, demo: cfg.demo });
-    if (url.pathname === '/api/snapshot') return send(res, 200, cfg.demo ? demoSnapshot() : await snapshot());
-    if (url.pathname === '/api/candles') return send(res, 200, cfg.demo ? demoCandles(url.searchParams) : await candles(url.searchParams));
-    send(res, 404, { error: 'not found' });
-  } catch (e) {
-    console.error('[오류] ' + e.message);
-    send(res, e.status && e.status < 600 ? (e.status >= 500 ? 502 : e.status) : 500, { error: e.message });
-  }
-});
-server.listen(cfg.port, '127.0.0.1', () => {
-  const u = 'http://localhost:' + cfg.port;
-  console.log('');
-  console.log(cfg.demo ? '  [데모 모드] config.json에 키가 없어서 예시 데이터로 띄웠어요.' : '  토스증권 계좌에 연결했어요. (조회 전용)');
-  console.log('  브라우저에서 열기: ' + u);
-  console.log('  끄려면 이 창에서 Ctrl+C');
-  console.log('');
-  if (!process.argv.includes('--no-open')) {
-    const { exec } = require('child_process');
-    const cmd = process.platform === 'win32' ? 'start "" "' + u + '"' : process.platform === 'darwin' ? 'open ' + u : 'xdg-open ' + u;
-    exec(cmd, () => {});
-  }
-});
-server.on('error', (e) => { console.error('[오류] 서버를 열 수 없어요: ' + e.message + (e.code === 'EADDRINUSE' ? ' (이미 켜져 있거나 포트 ' + cfg.port + '을 다른 프로그램이 쓰는 중)' : '')); process.exit(1); });
+const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,15}$/;
+const JOB_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const localDate = (d = new Date()) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+// AI 공급자가 쓰는 http: 모든 키를 오류 메시지에서 지워줘요.
+function makeHttp(c, request = requestJson) { return (o) => request({ ...o, secrets: c.secrets() }); }
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on('data', (c) => { size += c.length; if (size <= MAX_BODY) chunks.push(c); });
+    req.on('end', () => resolve(size > MAX_BODY ? 'x'.repeat(MAX_BODY + 1) : Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+function createServer(deps = {}) {
+  const c = deps.cfg || cfg;
+  const jobs = deps.jobs, store = deps.store;
+  const snap = deps.snapshot || snapshot;
+  const demoSnap = deps.demoSnapshot || demoSnapshot;
+  const srv = http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    try {
+      if (req.method === 'POST' && (url.pathname === '/api/analyze' || /^\/api\/jobs\/[^/]+\/cancel$/.test(url.pathname))) {
+        const bodyText = await readBody(req);
+        const bad = checkPost(req, bodyText, srv.address().port);
+        if (bad) return send(res, bad.status, { error: bad.error });
+        if (url.pathname === '/api/analyze') {
+          let b;
+          try { b = JSON.parse(bodyText); } catch (_) { b = null; }
+          const symbol = b && typeof b.symbol === 'string' ? b.symbol : '';
+          if (!SYMBOL_RE.test(symbol)) return send(res, 400, { error: '종목 심볼이 올바르지 않아요.' });
+          if (b.mode !== 'quick' && b.mode !== 'deep') return send(res, 400, { error: '분석 방식이 올바르지 않아요.' });
+          const ctx = buildContext(c.demo ? demoSnap() : await snap(), symbol, { includePosition: !c.demo, today: localDate() });
+          if (!ctx) return send(res, 404, { error: '보유하지 않은 종목이에요' });
+          return send(res, 200, jobs.start(ctx, b.mode));
+        }
+        const id = url.pathname.split('/')[3];
+        if (!JOB_ID_RE.test(id) || !jobs.cancel(id)) return send(res, 404, { error: '진행 중인 분석을 찾을 수 없어요.' });
+        return send(res, 200, { ok: true });
+      }
+      if (req.method !== 'GET') return send(res, 405, { error: '지원하지 않는 요청이에요.' });
+      if (url.pathname === '/' || url.pathname === '/index.html') return send(res, 200, fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), 'text/html; charset=utf-8');
+      if (url.pathname === '/d3.min.js') return send(res, 200, fs.readFileSync(path.join(ROOT, 'd3.min.js'), 'utf8'), 'text/javascript; charset=utf-8');
+      if (url.pathname === '/api/config') return send(res, 200, { refreshSeconds: c.refreshSeconds, demo: c.demo });
+      if (url.pathname === '/api/snapshot') return send(res, 200, c.demo ? demoSnap() : await snap());
+      if (url.pathname === '/api/candles') return send(res, 200, c.demo ? demoCandles(url.searchParams) : await candles(url.searchParams));
+      if (url.pathname === '/api/ai/status') return send(res, 200, { aiDemo: !!c.aiDemo, tossDemo: !!c.demo, providers: { claude: !!c.ai.claude, openai: !!c.ai.openai, gemini: !!c.ai.gemini } });
+      if (url.pathname === '/api/reports') {
+        const s = url.searchParams.get('symbol');
+        return send(res, 200, store.list(s && SYMBOL_RE.test(s) ? s : undefined));
+      }
+      let m = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
+      if (m) { const v = JOB_ID_RE.test(m[1]) ? jobs.get(m[1]) : null; return v ? send(res, 200, v) : send(res, 404, { error: '분석을 찾을 수 없어요.' }); }
+      m = url.pathname.match(/^\/api\/reports\/([^/]+)$/);
+      if (m) { const r = store.get(m[1]); return r ? send(res, 200, r) : send(res, 404, { error: '보고서를 찾을 수 없어요.' }); }
+      send(res, 404, { error: 'not found' });
+    } catch (e) {
+      console.error('[오류] ' + e.message);
+      send(res, e.status && e.status < 600 ? (e.status >= 500 ? 502 : e.status) : 500, { error: e.message });
+    }
+  });
+  return srv;
+}
+
+module.exports = { createServer, makeHttp };
+
+if (require.main === module) {
+  const store = createStore(path.join(ROOT, 'reports'));
+  const jobs = createJobManager({
+    config: cfg, store, synthesize, http: makeHttp(cfg),
+    providers: [require('./lib/providers/claude'), require('./lib/providers/openai'), require('./lib/providers/gemini')],
+  });
+  const server = createServer({ cfg, jobs, store });
+  server.listen(cfg.port, '127.0.0.1', () => {
+    const u = 'http://localhost:' + cfg.port;
+    console.log('');
+    console.log(cfg.demo ? '  [데모 모드] config.json에 키가 없어서 예시 데이터로 띄웠어요.' : '  토스증권 계좌에 연결했어요. (조회 전용)');
+    console.log(cfg.aiDemo ? '  [AI 데모] AI 키가 없어서 예시 분석 보고서로 보여드려요.' : '  AI 분석을 쓸 수 있어요.');
+    console.log('  브라우저에서 열기: ' + u);
+    console.log('  끄려면 이 창에서 Ctrl+C');
+    console.log('');
+    if (!cfg.demo) { const n = Object.keys(store.loadJobs()).length; jobs.resumeAll().then(() => console.log('  이어받은 분석 ' + n + '개')).catch((e) => console.warn('[이어받기] ' + e.message)); }
+    if (!process.argv.includes('--no-open')) {
+      const { exec } = require('child_process');
+      const cmd = process.platform === 'win32' ? 'start "" "' + u + '"' : process.platform === 'darwin' ? 'open ' + u : 'xdg-open ' + u;
+      exec(cmd, () => {});
+    }
+  });
+  server.on('error', (e) => { console.error('[오류] 서버를 열 수 없어요: ' + e.message + (e.code === 'EADDRINUSE' ? ' (이미 켜져 있거나 포트 ' + cfg.port + '을 다른 프로그램이 쓰는 중)' : '')); process.exit(1); });
+}

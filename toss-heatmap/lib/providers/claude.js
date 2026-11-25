@@ -74,8 +74,12 @@ async function run({ key, model, mode, prompt, limits, signal, http }) {
   return { provider: 'claude', status: 'done', text, sources: dedupeSources(sources), limitHit };
 }
 
-async function complete({ key, model, prompt, http, signal }) {
-  const resp = await call(http, key, { model, max_tokens: 32000, thinking: { type: 'adaptive' }, output_config: { effort: 'high' }, messages: [{ role: 'user', content: prompt }] }, signal);
+async function complete({ key, model, prompt, http, signal, light = false }) {
+  // light: 드래그 설명처럼 짧고 빠른 답. 생각 시간 없이 짧게 써요.
+  const body = light
+    ? { model, max_tokens: 1500, messages: [{ role: 'user', content: prompt }] }
+    : { model, max_tokens: 32000, thinking: { type: 'adaptive' }, output_config: { effort: 'high' }, messages: [{ role: 'user', content: prompt }] };
+  const resp = await call(http, key, body, signal);
   // 잘린 JSON은 쓸 수 없으니 오류로 돌려서 다음 AI가 쓰게 해요.
   if (resp && resp.stop_reason === 'max_tokens') throw new Error('Claude 응답이 길이 한도에서 잘렸어요');
   return (resp.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');

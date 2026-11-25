@@ -114,6 +114,19 @@ tr:last-child td { border-bottom: 0; }
 .report a { color: var(--accent); }
 .report pre { margin: 0; white-space: pre-wrap; font-family: var(--mono); font-size: 12px; background: #0f1214; border: 1px solid var(--line); border-radius: 6px; padding: 10px; max-height: 480px; overflow: auto; }
 .report .disc { font-size: 11px; color: var(--muted); }
+.report mark { background: rgba(255, 216, 74, .22); color: #ffe58a; font-weight: 600; border-radius: 3px; padding: 0 2px; }
+.report .keys { border: 1px solid #5a4a1a; background: #221d0e; border-radius: 8px; padding: 10px 12px; }
+.report .keys h4 { color: #ffd84a; }
+.report .keys li { font-size: 14px; font-weight: 500; }
+.report .xtip { font-size: 11px; color: var(--muted); }
+.xbtn { position: fixed; z-index: 50; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid #5a4a1a; background: #2a2414; color: #ffd84a; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+.xbtn[hidden], .xpanel[hidden] { display: none; }
+.xpanel { position: fixed; right: 16px; bottom: 16px; z-index: 60; width: min(420px, calc(100vw - 32px)); max-height: 60vh; overflow: auto; background: #14181b; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: 0 8px 28px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 8px; }
+.xpanel .xhead { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 13px; }
+.xpanel .xclose { background: none; border: 0; color: var(--muted); font-size: 18px; cursor: pointer; }
+.xpanel .xq { font-size: 12px; color: var(--muted); border-left: 3px solid #5a4a1a; padding-left: 8px; white-space: pre-wrap; max-height: 6em; overflow: hidden; }
+.xpanel .xa { font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
+.xpanel .xa.err { color: #ff9a9d; }
 </style>
 </head>
 <body>
@@ -171,6 +184,12 @@ tr:last-child td { border-bottom: 0; }
     <div class="ai-err" id="ai-err" role="status" hidden></div>
     <div class="past" id="ai-past" hidden><h3>지난 보고서</h3><ul id="ai-past-list"></ul></div>
     <div id="ai-report" tabindex="-1"></div>
+    <button type="button" class="xbtn" id="xbtn" hidden>💡 설명 보기 (E)</button>
+    <div class="xpanel" id="xpanel" role="dialog" aria-label="선택한 부분 설명" hidden>
+      <div class="xhead"><span>💡 선택한 부분 설명</span><button type="button" class="xclose" id="xclose" aria-label="닫기">×</button></div>
+      <div class="xq" id="xq"></div>
+      <div class="xa" id="xa"></div>
+    </div>
   </section>
 
   <section class="card">
@@ -390,6 +409,13 @@ const ss = {
 };
 const jobKey = (sym) => 'aiJob:' + sym;
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
+// AI가 ==이렇게== 표시한 핵심 구절을 <mark>로 강조해요. 글은 모두 textContent로만 넣어요.
+const rich = (tag, cls, text) => {
+  const e = el(tag, cls); const s = String(text == null ? '' : text); const re = /==([^=\n]{1,120})==/g; let i = 0, m;
+  while ((m = re.exec(s))) { if (m.index > i) e.append(document.createTextNode(s.slice(i, m.index))); e.append(el('mark', null, m[1])); i = re.lastIndex; }
+  if (i < s.length) e.append(document.createTextNode(s.slice(i)));
+  return e;
+};
 // 실패 이유(서버가 키를 지운 글)를 칩에 붙여요. 길면 줄이고 전체는 마우스를 올리면 보여요.
 const withReason = (c, p) => {
   if (!p || !p.error || p.status === 'skipped') return c;
@@ -518,30 +544,35 @@ function renderReport(r) {
   if (chips.childNodes.length) root.append(chips);
 
   if (r.raw) { root.append(el('pre', null, r.raw)); }
-  const concl = el('ol', 'concl'); (r.conclusion || []).forEach((t) => concl.append(el('li', null, t)));
+  if ((r.keyPoints || []).length) {
+    const box = el('div', 'keys'); box.append(el('h4', null, '🔑 꼭 볼 점'));
+    const ul = el('ul', 'plain'); r.keyPoints.forEach((t) => ul.append(rich('li', null, t))); box.append(ul); root.append(box);
+  }
+  root.append(el('div', 'xtip', '모르는 부분은 마우스로 드래그한 뒤 E 키(또는 💡 버튼)를 누르면 쉽게 설명해 드려요.'));
+  const concl = el('ol', 'concl'); (r.conclusion || []).forEach((t) => concl.append(rich('li', null, t)));
   if (concl.childNodes.length) sec('최종 3줄 결론', concl);
-  if (r.why) sec('① 왜 올랐나·내렸나', el('p', null, r.why));
+  if (r.why) sec('① 왜 올랐나·내렸나', rich('p', null, r.why));
   if (r.outlook) {
     const d = sec('② 앞으로의 전망');
-    for (const [l, k] of [['좋아질 이유', 'up'], ['나빠질 이유', 'down'], ['다가오는 일정', 'events']]) if (r.outlook[k]) { const p = el('p'); p.append(el('b', null, l + ' '), document.createTextNode(String(r.outlook[k]))); d.append(p); }
+    for (const [l, k] of [['좋아질 이유', 'up'], ['나빠질 이유', 'down'], ['다가오는 일정', 'events']]) if (r.outlook[k]) { const p = el('p'); p.append(el('b', null, l + ' '), ...rich('span', null, r.outlook[k]).childNodes); d.append(p); }
   }
-  if (r.risks) sec('③ 위험 요소', el('p', null, r.risks));
+  if (r.risks) sec('③ 위험 요소', rich('p', null, r.risks));
   if (r.views && r.views.length) {
     const wrap = document.createElement('div');
     for (const v of r.views) {
       const row = el('div', 'view'), who = el('div', 'who', PROV[v.provider] || v.provider);
       const cls = v.stance === '긍정' ? 'pos' : v.stance === '부정' ? 'neg' : 'neu';
-      row.append(who, el('span', 'badge ' + cls, v.stance || '중립'), el('p', null, v.reason)); wrap.append(row);
+      row.append(who, el('span', 'badge ' + cls, v.stance || '중립'), rich('p', null, v.reason)); wrap.append(row);
     }
     sec('④ 세 AI의 시각', wrap);
   }
-  if (r.disagreements) sec('⑤ AI끼리 다른 의견', el('p', null, r.disagreements));
-  if (r.myPosition) sec('내 상황에서 보면', el('p', null, r.myPosition));
+  if (r.disagreements) sec('⑤ AI끼리 다른 의견', rich('p', null, r.disagreements));
+  if (r.myPosition) sec('내 상황에서 보면', rich('p', null, r.myPosition));
   if (r.summaries) {
     const d = sec('AI별 3줄 요약');
     for (const k of Object.keys(PROV)) {
       const lines = r.summaries[k]; if (!Array.isArray(lines) || !lines.length) continue;
-      d.append(el('b', null, PROV[k])); const ul = el('ul', 'plain'); lines.forEach((t) => ul.append(el('li', null, t))); d.append(ul);
+      d.append(el('b', null, PROV[k])); const ul = el('ul', 'plain'); lines.forEach((t) => ul.append(rich('li', null, t))); d.append(ul);
     }
   }
   const srcs = (r.sources || []).map((s) => ({ title: s.title, href: safeUrl(s.url) })).filter((s) => s.href);
@@ -559,6 +590,47 @@ $('ai-deep').onclick = () => { $('ai-confirm').hidden = false; $('ai-go').focus(
 $('ai-no').onclick = () => { $('ai-confirm').hidden = true; $('ai-deep').focus(); };
 $('ai-go').onclick = () => { $('ai-confirm').hidden = true; startAnalysis('deep'); };
 $('ai-cancel').onclick = cancelJob;
+// ── 드래그한 부분 설명 ──
+const X = { text: '', seq: 0 };
+function selectedInReport() {
+  const sel = window.getSelection(); if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+  const box = $('ai-report'); const range = sel.getRangeAt(0);
+  if (!box.contains(range.commonAncestorContainer)) return null;
+  const text = sel.toString().trim(); return text ? { text: text.slice(0, 1000), range } : null;
+}
+function placeXbtn() {
+  const s = A.openReport ? selectedInReport() : null; const b = $('xbtn');
+  if (!s) { b.hidden = true; return; }
+  const r = s.range.getBoundingClientRect();
+  b.style.left = Math.max(8, Math.min(r.right - 60, document.documentElement.clientWidth - 150)) + 'px';
+  b.style.top = Math.min(r.bottom + 6, window.innerHeight - 40) + 'px'; b.hidden = false;
+}
+async function explainSelection() {
+  const s = selectedInReport(); if (!s || !A.openReport) return;
+  $('xbtn').hidden = true;
+  const seq = ++X.seq; X.text = s.text;
+  $('xpanel').hidden = false; $('xq').textContent = s.text.length > 200 ? s.text.slice(0, 200) + '…' : s.text;
+  const a = $('xa'); a.classList.remove('err'); a.textContent = '설명을 만드는 중이에요…';
+  try {
+    const d = await api('/api/explain', { reportId: A.openReport, text: s.text });
+    if (seq === X.seq) a.textContent = d.answer + (d.provider && PROV[d.provider] ? '\n\n— ' + PROV[d.provider] : '');
+  } catch (e) { if (seq === X.seq) { a.classList.add('err'); a.textContent = '설명을 받지 못했어요: ' + e.message; } }
+}
+document.addEventListener('mouseup', () => setTimeout(placeXbtn, 0));
+window.addEventListener('scroll', () => { $('xbtn').hidden = true; }, { passive: true });
+document.addEventListener('selectionchange', () => { if (!selectedInReport()) $('xbtn').hidden = true; });
+$('xbtn').addEventListener('mousedown', (e) => e.preventDefault()); // 누를 때 선택이 풀리지 않게
+$('xbtn').addEventListener('click', explainSelection);
+$('xclose').addEventListener('click', () => { $('xpanel').hidden = true; X.seq++; });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('xpanel').hidden) { $('xpanel').hidden = true; X.seq++; return; }
+  // 한글 자판(ㄷ)이어도 같은 자리의 E 키면 동작해요.
+  if (e.code !== 'KeyE' || e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
+  const t = e.target; if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  if (!selectedInReport()) return;
+  e.preventDefault(); explainSelection();
+});
+
 aiInit();
 
 fetch('/api/config').then((r) => r.json()).then((c) => { S.refresh = c.refreshSeconds || 5; }).catch(() => {}).finally(poll);

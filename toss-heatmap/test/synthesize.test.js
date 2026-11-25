@@ -63,3 +63,17 @@ test('no done results → error lists each AI reason', async () => {
     { provider: 'gemini', status: 'cancelled', sources: [] }], writers: [] }),
   (e) => /^모든 AI가 실패했어요/.test(e.message) && e.message.includes('Claude: HTTP 401') && e.message.includes('ChatGPT: 시간 한도'));
 });
+
+test('prompt asks the writer to mark key phrases and list keyPoints', () => {
+  const { synthesisPrompt } = require('../lib/prompts');
+  const p = synthesisPrompt(ctx, [done('claude')]);
+  assert.match(p, /==/); assert.match(p, /keyPoints/);
+});
+
+test('keyPoints are kept (max 3, strings) and default to []', async () => {
+  const withKp = JSON.stringify({ ...JSON.parse(good), keyPoints: ['==핵심== 하나', 2, 'c', 'd'] });
+  const r = await synthesize({ ctx, results: [done('claude')], writers: [writer('claude', async () => withKp)] });
+  assert.deepStrictEqual(r.keyPoints, ['==핵심== 하나', '2', 'c']);
+  const r2 = await synthesize({ ctx, results: [done('claude')], writers: [writer('claude', async () => good)] });
+  assert.deepStrictEqual(r2.keyPoints, []);
+});

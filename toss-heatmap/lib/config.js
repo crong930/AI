@@ -5,6 +5,9 @@ const fs = require('fs');
 const PLACEHOLDER = /여기에|붙여넣/;
 const DEFAULT_MODELS = {
   claudeQuick: 'claude-opus-5-5',
+  claudeExplain: 'claude-haiku-5-5',
+  openaiExplain: 'gpt-5-mini',
+  geminiExplain: 'gemini-3.1-pro-preview',
   claudeDeep: 'claude-opus-5-5',
   openaiQuick: 'gpt-5',
   openaiDeep: 'o3-deep-research',

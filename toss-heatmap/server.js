@@ -11,6 +11,7 @@ const { createStore } = require('./lib/report-store');
 const { buildContext } = require('./lib/context');
 const { createJobManager } = require('./lib/jobs');
 const { synthesize } = require('./lib/synthesize');
+const { explain: explainSelection } = require('./lib/explain');
 const { checkPost, MAX_BODY } = require('./lib/guard');
 
 const ROOT = __dirname;
@@ -255,6 +256,8 @@ function createServer(deps = {}) {
   const c = deps.cfg || cfg;
   const jobs = deps.jobs, store = deps.store;
   const snap = deps.snapshot || snapshot;
+  const explain = deps.explain || ((o) => explainSelection({ ...o, config: c, http: makeHttp(c),
+    providers: [require('./lib/providers/claude'), require('./lib/providers/openai'), require('./lib/providers/gemini')] }));
   const demoSnap = deps.demoSnapshot || demoSnapshot;
   const srv = http.createServer(async (req, res) => {
     // DNS 리바인딩 막기: 이 PC 주소(localhost/127.0.0.1 + 실제 포트)로 들어온 요청만 받아요.
@@ -263,10 +266,22 @@ function createServer(deps = {}) {
     if (host !== 'localhost:' + port && host !== '127.0.0.1:' + port) return send(res, 403, { error: '이 컴퓨터의 주소(localhost)로만 열 수 있어요.' });
     const url = new URL(req.url, 'http://localhost');
     try {
-      if (req.method === 'POST' && (url.pathname === '/api/analyze' || /^\/api\/jobs\/[^/]+\/cancel$/.test(url.pathname))) {
+      if (req.method === 'POST' && (url.pathname === '/api/analyze' || url.pathname === '/api/explain' || /^\/api\/jobs\/[^/]+\/cancel$/.test(url.pathname))) {
         const bodyText = await readBody(req);
         const bad = checkPost(req, bodyText, srv.address().port);
         if (bad) return send(res, bad.status, { error: bad.error });
+        if (url.pathname === '/api/explain') {
+          let b;
+          try { b = JSON.parse(bodyText); } catch (_) { b = null; }
+          const text = b && typeof b.text === 'string' ? b.text.trim() : '';
+          if (!text || text.length > 1000) return send(res, 400, { error: '설명할 부분을 1~1000자로 골라 주세요.' });
+          const report = b && typeof b.reportId === 'string' ? store.get(b.reportId) : null;
+          if (!report) return send(res, 404, { error: '보고서를 찾을 수 없어요.' });
+          const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), 90000);
+          try { return send(res, 200, await explain({ report, selection: text, signal: ac.signal })); }
+          catch (e) { return send(res, 502, { error: (e && e.message) || '설명을 받지 못했어요.' }); }
+          finally { clearTimeout(timer); }
+        }
         if (url.pathname === '/api/analyze') {
           let b;
           try { b = JSON.parse(bodyText); } catch (_) { b = null; }

@@ -194,3 +194,24 @@ test('launcher scripts are UTF-16LE with BOM so Korean text works in Windows Scr
   const start = fs.readFileSync(path.join(__dirname, '..', 'start-hidden.vbs')).subarray(2).toString('utf16le');
   assert.match(start, /--no-open/);
 });
+
+test('POST /api/explain validates and returns the explanation', async () => {
+  const seen = [];
+  const t = await boot({ explain: async (o) => { seen.push(o); return { provider: 'claude', answer: '쉬운 설명' }; } });
+  let r = await t.post('/api/explain', { reportId: 'r1', text: 'PCE 물가' });
+  assert.strictEqual(r.status, 200); assert.deepStrictEqual(await r.json(), { provider: 'claude', answer: '쉬운 설명' });
+  assert.strictEqual(seen[0].selection, 'PCE 물가'); assert.deepStrictEqual(seen[0].report, { id: 'r1' });
+  r = await t.post('/api/explain', { reportId: 'nope', text: 'x' }); assert.strictEqual(r.status, 404);
+  r = await t.post('/api/explain', { reportId: 'r1', text: '' }); assert.strictEqual(r.status, 400);
+  r = await t.post('/api/explain', { reportId: 'r1', text: 'x'.repeat(1001) }); assert.strictEqual(r.status, 400);
+  r = await fetch(t.url('/api/explain'), { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example' }, body: '{"reportId":"r1","text":"x"}' });
+  assert.strictEqual(r.status, 403);
+  await t.close();
+});
+
+test('POST /api/explain returns 502 with the error text when explaining fails', async () => {
+  const t = await boot({ explain: async () => { throw new Error('Claude 크레딧(충전 금액)이 없어요.'); } });
+  const r = await t.post('/api/explain', { reportId: 'r1', text: 'x' });
+  assert.strictEqual(r.status, 502); assert.match((await r.json()).error, /크레딧/);
+  await t.close();
+});

@@ -16,6 +16,7 @@ function toMarkdown(r) {
   if (r.raw) {
     L.push('## 보고서', '', r.raw, '');
   } else {
+    if ((r.keyPoints || []).length) L.push('## 🔑 꼭 볼 점', '', ...r.keyPoints.map((k) => `- ${k}`), '');
     L.push('## 최종 3줄 결론', '', ...(r.conclusion || []).map((c, i) => `${i + 1}. ${c}`), '');
     L.push('## ① 왜 올랐나/내렸나', '', r.why || '', '');
     const o = r.outlook || {};
@@ -29,7 +30,8 @@ function toMarkdown(r) {
   }
   if ((r.sources || []).length) L.push('## 출처', '', ...r.sources.map((s) => `- [${s.title}](${s.url})`), '');
   L.push('---', '투자 판단의 책임은 본인에게 있어요. 이 보고서는 참고 자료예요.', '');
-  return L.join('\n');
+  // AI가 ==이렇게== 표시한 핵심 구절은 굵게 보여줘요.
+  return L.join('\n').replace(/==([^=\n]{1,120})==/g, '**$1**');
 }
 
 module.exports = { toMarkdown };

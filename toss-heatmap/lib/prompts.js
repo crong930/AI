@@ -63,6 +63,7 @@ ${reports}
 
 [출력] 아래 모양의 JSON 하나만 출력하세요. 다른 글은 쓰지 마세요. 모든 값은 한국어예요.
 {
+  "keyPoints": ["투자 판단에 가장 중요한 점 1", "2", "3"],
   "conclusion": ["최종 결론 1줄", "2줄", "3줄"],
   "why": "왜 올랐나/내렸나 (여러 문단 가능)",
   "outlook": { "up": "좋아질 이유", "down": "나빠질 이유", "events": "다가오는 일정" },
@@ -72,7 +73,10 @@ ${reports}
   "myPosition": ${pos ? '"평균 매수가 대비 위치, 비중으로 인한 위험 등 내 상황에 맞춘 설명"' : 'null'},
   "summaries": { ${done.map((r) => `"${r.provider}": ["3줄 요약 1", "2", "3"]`).join(', ')} }
 }
-규칙: 매수·매도를 지시하지 말고 판단 재료만 주세요. views에는 보고서를 쓴 AI마다 하나씩 넣으세요.`;
+규칙: 매수·매도를 지시하지 말고 판단 재료만 주세요. views에는 보고서를 쓴 AI마다 하나씩 넣으세요.
+강조: keyPoints에는 이 사람이 꼭 알아야 할 가장 중요한 점을 1~3개, 한 줄씩 넣으세요.
+그리고 본문(conclusion, why, outlook, risks, disagreements, myPosition)에서 가장 중요하다고 판단한 짧은 구절만 ==이렇게== 감싸세요.
+보고서 전체에서 4~8곳만, 한 곳은 40자 이내로 하세요. 모든 걸 강조하면 아무것도 강조되지 않아요.`;
 }
 
 module.exports = { researchPrompt, synthesisPrompt, LABEL };

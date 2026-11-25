@@ -19,6 +19,7 @@ function normalize(o) {
   const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
   const outlook = o.outlook || {};
   return {
+    keyPoints: (Array.isArray(o.keyPoints) ? o.keyPoints : []).slice(0, 3).map(str).filter(Boolean),
     conclusion: o.conclusion.slice(0, 3).map(str),
     why: str(o.why),
     outlook: { up: str(outlook.up), down: str(outlook.down), events: str(outlook.events) },
@@ -30,7 +31,7 @@ function normalize(o) {
   };
 }
 
-const empty = () => ({ conclusion: [], why: '', outlook: { up: '', down: '', events: '' }, risks: '', views: [], disagreements: '', myPosition: null, summaries: {} });
+const empty = () => ({ keyPoints: [], conclusion: [], why: '', outlook: { up: '', down: '', events: '' }, risks: '', views: [], disagreements: '', myPosition: null, summaries: {} });
 
 async function synthesize({ ctx, results, writers, http, signal }) {
   const done = results.filter((r) => r.status === 'done' && r.text);

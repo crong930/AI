@@ -93,3 +93,12 @@ test('writeAtomic falls back to direct write when rename keeps failing', () => {
   assert.deepStrictEqual(store.loadJobs(), { j2: { jobId: 'j2' } });
   assert.ok(!fs.existsSync(path.join(dir, '.jobs.json.tmp')));
 });
+
+test('markdown turns ==marks== into bold and shows key points first', () => {
+  const md = toMarkdown(report({ keyPoints: ['비중이 ==18.1%==로 커요'], why: '원인은 ==나스닥 하락==이에요' }));
+  assert.match(md, /## 🔑 꼭 볼 점/);
+  assert.match(md, /비중이 \*\*18\.1%\*\*로 커요/);
+  assert.match(md, /원인은 \*\*나스닥 하락\*\*이에요/);
+  assert.doesNotMatch(md, /==/);
+  assert.ok(md.indexOf('꼭 볼 점') < md.indexOf('최종 3줄 결론'));
+});

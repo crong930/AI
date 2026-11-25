@@ -1,0 +1,7 @@
+{
+  "clientId": "여기에 Client Id 붙여넣기",
+  "clientSecret": "여기에 Client Secret 붙여넣기",
+  "refreshSeconds": 5,
+  "port": 8787,
+  "sectorOverrides": {}
+}

@@ -1,7 +1,11 @@
 {
   "clientId": "여기에 Client Id 붙여넣기",
   "clientSecret": "여기에 Client Secret 붙여넣기",
+  "anthropicApiKey": "여기에 Claude API 키 붙여넣기",
+  "openaiApiKey": "여기에 ChatGPT(OpenAI) API 키 붙여넣기",
+  "geminiApiKey": "여기에 Gemini API 키 붙여넣기",
   "refreshSeconds": 5,
   "port": 8787,
-  "sectorOverrides": {}
+  "sectorOverrides": {},
+  "deepResearchLimit": { "enabled": true }
 }

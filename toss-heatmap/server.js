@@ -13,22 +13,10 @@ const CONFIG_PATH = path.join(ROOT, 'config.json');
 const SECTOR_CACHE = path.join(ROOT, '.sector-cache.json');
 
 // ---------- 설정 ----------
-function loadConfig() {
-  let cfg = {};
-  if (fs.existsSync(CONFIG_PATH)) {
-    try { cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); }
-    catch (e) { console.error('[오류] config.json 형식이 잘못됐어요: ' + e.message); process.exit(1); }
-  }
-  cfg.clientId = process.env.TOSS_CLIENT_ID || cfg.clientId || '';
-  cfg.clientSecret = process.env.TOSS_CLIENT_SECRET || cfg.clientSecret || '';
-  cfg.port = Number(cfg.port) || 8787;
-  cfg.refreshSeconds = Math.max(2, Number(cfg.refreshSeconds) || 5);
-  cfg.sectorOverrides = cfg.sectorOverrides || {};
-  const placeholder = /여기에|붙여넣/;
-  cfg.demo = process.argv.includes('--demo') || !cfg.clientId || !cfg.clientSecret || placeholder.test(cfg.clientId) || placeholder.test(cfg.clientSecret);
-  return cfg;
-}
-const cfg = loadConfig();
+const { loadConfig } = require('./lib/config');
+let cfg;
+try { cfg = loadConfig({ path: CONFIG_PATH, env: process.env, argv: process.argv }); }
+catch (e) { console.error('[오류] config.json 형식이 잘못됐어요: ' + e.message); process.exit(1); }
 
 // ---------- 토스 API 호출 ----------
 let token = null; // {value, expiresAt}

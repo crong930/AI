@@ -233,7 +233,7 @@ function demoCandles(q) {
 // ---------- 웹 서버 (127.0.0.1 전용) ----------
 const send = (res, status, body, type = 'application/json; charset=utf-8') => {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
-  res.end(typeof body === 'string' ? body : JSON.stringify(body));
+  res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 };
 const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,15}$/;
 const JOB_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -283,6 +283,8 @@ function createServer(deps = {}) {
       }
       if (req.method !== 'GET') return send(res, 405, { error: '지원하지 않는 요청이에요.' });
       if (url.pathname === '/' || url.pathname === '/index.html') return send(res, 200, fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), 'text/html; charset=utf-8');
+      if (url.pathname === '/icon.svg') return send(res, 200, fs.readFileSync(path.join(ROOT, 'icon.svg'), 'utf8'), 'image/svg+xml');
+      if (url.pathname === '/favicon.ico') return send(res, 200, fs.readFileSync(path.join(ROOT, 'icon.ico')), 'image/x-icon');
       if (url.pathname === '/d3.min.js') return send(res, 200, fs.readFileSync(path.join(ROOT, 'd3.min.js'), 'utf8'), 'text/javascript; charset=utf-8');
       if (url.pathname === '/api/config') return send(res, 200, { refreshSeconds: c.refreshSeconds, demo: c.demo });
       if (url.pathname === '/api/snapshot') return send(res, 200, c.demo ? demoSnap() : await snap());

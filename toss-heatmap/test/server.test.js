@@ -171,3 +171,14 @@ test('resume runs whenever AI keys exist, even in Toss demo mode', async () => {
   await resumeOnBoot({ cfg: { demo: false, aiDemo: true }, jobs, store, log: () => {} });
   assert.strictEqual(n, 1);
 });
+
+test('serves the app icon as svg and ico', async () => {
+  const t = await boot();
+  const svg = await fetch(t.url('/icon.svg'));
+  assert.strictEqual(svg.status, 200); assert.match(svg.headers.get('content-type'), /svg/);
+  const ico = await fetch(t.url('/favicon.ico'));
+  assert.strictEqual(ico.status, 200);
+  const buf = Buffer.from(await ico.arrayBuffer());
+  assert.deepStrictEqual([...buf.subarray(0, 4)], [0, 0, 1, 0]);
+  await t.close();
+});

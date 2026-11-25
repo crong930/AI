@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16246b"/><stop offset="1" stop-color="#070d33"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="r"><rect width="256" height="256" rx="56"/></clipPath>
+  </defs>
+  <g clip-path="url(#r)">
+    <rect width="256" height="256" fill="url(#bg)"/>
+    <g stroke="#3a56c9" stroke-opacity=".35" stroke-width="2">
+      <path d="M0 64H256M0 128H256M0 192H256M64 0V256M128 0V256M192 0V256"/>
+    </g>
+    <g fill="#5b8cff" opacity=".45">
+      <rect x="28" y="214" width="16" height="42"/><rect x="56" y="200" width="16" height="56"/>
+      <rect x="84" y="222" width="16" height="34"/><rect x="112" y="206" width="16" height="50"/>
+      <rect x="140" y="194" width="16" height="62"/><rect x="168" y="212" width="16" height="44"/>
+      <rect x="196" y="188" width="16" height="68"/>
+    </g>
+    <g filter="url(#glow)" stroke-linecap="round">
+      <g stroke-width="5">
+        <path d="M60 104V176" stroke="#ff4fae"/><path d="M108 82V150" stroke="#4fd1ff"/>
+        <path d="M156 92V160" stroke="#ff4fae"/><path d="M204 44V118" stroke="#4fd1ff"/>
+      </g>
+      <rect x="46" y="118" width="28" height="44" rx="5" fill="#ff4fae"/>
+      <rect x="94" y="94" width="28" height="44" rx="5" fill="#4fd1ff"/>
+      <rect x="142" y="106" width="28" height="38" rx="5" fill="#ff4fae"/>
+      <rect x="190" y="58" width="28" height="46" rx="5" fill="#4fd1ff"/>
+      <path d="M24 170 C60 150 80 120 108 128 S150 150 168 120 S210 70 236 58" fill="none" stroke="#ffd84a" stroke-width="7"/>
+      <circle cx="236" cy="58" r="9" fill="#ffd84a"/>
+    </g>
+  </g>
+</svg>

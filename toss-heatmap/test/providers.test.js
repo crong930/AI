@@ -110,6 +110,74 @@ test('timeout returns limitHit and cancels', async () => {
   assert.ok(http.calls.some((c) => c.url.endsWith('/interactions/g1/cancel')));
 });
 
+test('claude deep stops at timeout with limitHit and partial text', async () => {
+  const paused = { stop_reason: 'pause_turn', content: [{ type: 'text', text: '부분 보고서' }] };
+  const seen = [];
+  const http = async (opts) => {
+    seen.push(opts);
+    if (seen.length === 1) return { status: 200, json: paused };
+    return new Promise((resolve, reject) => {
+      if (!opts.signal) return; // would hang forever without a deadline signal
+      opts.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+    });
+  };
+  const r = await Promise.race([
+    claude.run({ key: 'ak', model: 'm', mode: 'deep', prompt: 'p', limits: { ...LIMITS, timeoutMinutes: 0.0005 }, http }),
+    new Promise((resolve) => setTimeout(() => resolve({ hung: true }), 2000)),
+  ]);
+  assert.ok(!r.hung, 'claude run hung past the time limit');
+  assert.strictEqual(r.status, 'done');
+  assert.strictEqual(r.limitHit, true);
+  assert.strictEqual(r.text, '부분 보고서');
+  assert.ok(typeof seen[1].timeoutMs === 'number' && seen[1].timeoutMs <= 30 * 60000 * 0.001 + 1000);
+});
+
+test('claude deep timeout with no text fails with limitHit', async () => {
+  const http = (opts) => new Promise((resolve, reject) => {
+    opts.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+  });
+  const r = await claude.run({ key: 'ak', model: 'm', mode: 'deep', prompt: 'p', limits: { ...LIMITS, timeoutMinutes: 0.0005 }, http });
+  assert.strictEqual(r.status, 'failed');
+  assert.strictEqual(r.limitHit, true);
+});
+
+test('claude user abort still cancels', async () => {
+  const ac = new AbortController();
+  const http = (opts) => new Promise((resolve, reject) => {
+    opts.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+    setTimeout(() => ac.abort(), 5);
+  });
+  const r = await claude.run({ key: 'ak', model: 'm', mode: 'deep', prompt: 'p', limits: LIMITS, http, signal: ac.signal });
+  assert.strictEqual(r.status, 'cancelled');
+});
+
+test('transient poll error is retried', async () => {
+  let polls = 0;
+  const h = async (opts) => {
+    if (opts.method === 'POST') return { status: 200, json: { id: 'g1', status: 'in_progress' } };
+    polls++;
+    if (polls === 1) throw new HttpError(503, 'HTTP 503');
+    return { status: 200, json: { id: 'g1', status: 'completed', output_text: '복구됨' } };
+  };
+  const r = await gemini.run({ key: 'gk', model: 'x', mode: 'deep', prompt: 'p', limits: LIMITS, http: h, pollMs: 1 });
+  assert.strictEqual(r.status, 'done');
+  assert.strictEqual(r.text, '복구됨');
+});
+
+test('repeated poll errors cancel the job before failing', async () => {
+  const calls = [];
+  const h = async (opts) => {
+    calls.push(opts);
+    if (opts.method === 'POST' && opts.url.endsWith('/cancel')) return { status: 200, json: {} };
+    if (opts.method === 'POST') return { status: 200, json: { id: 'r1', status: 'queued' } };
+    throw new HttpError(500, 'HTTP 500');
+  };
+  const r = await openai.run({ key: 'ok', model: 'm', mode: 'deep', prompt: 'p', limits: LIMITS, http: h, pollMs: 1 });
+  assert.strictEqual(r.status, 'failed');
+  assert.ok(calls.some((c) => c.method === 'POST' && c.url.endsWith('/v1/responses/r1/cancel')));
+  assert.strictEqual(calls.filter((c) => c.method === 'GET').length, 5);
+});
+
 test('prompt carries no amounts', () => {
   const p = researchPrompt({ symbol: '005930', name: '삼성전자', market: 'KR', currency: 'KRW', lastPrice: 96500, avgPrice: 58000, returnRate: 0.66, dailyRate: 0.01, weightPct: 31.2, today: '2026-11-25', quantity: 7, valueKrw: 123456 }, 'deep');
   assert.ok(!p.includes('123456'));

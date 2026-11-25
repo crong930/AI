@@ -20,6 +20,8 @@ function sleep(ms, signal) {
 const failed = (provider, error, extra = {}) => ({ provider, status: 'failed', sources: [], limitHit: false, error, ...extra });
 const cancelled = (provider) => ({ provider, status: 'cancelled', sources: [], limitHit: false });
 
+const MAX_POLL_ERRORS = 5;
+
 // start(): 핸들 생성 → poll(handle): {finished, ok, text, sources, limitHit, error} → cancel(handle)
 async function runBackground({ provider, start, poll, cancel, resume, onHandle, signal, limits, pollMs = 10000 }) {
   const t0 = Date.now();
@@ -29,11 +31,24 @@ async function runBackground({ provider, start, poll, cancel, resume, onHandle, 
     if (onHandle) onHandle(handle);
   }
   const deadline = limits && limits.enabled ? t0 + limits.timeoutMinutes * 60000 : Infinity;
-  let last = null;
+  let last = { finished: false };
+  let errors = 0;
   for (;;) {
     if (signal && signal.aborted) { await cancel(handle).catch(() => {}); return cancelled(provider); }
-    last = await poll(handle);
-    if (last.finished) {
+    let cur = null;
+    try {
+      cur = await poll(handle);
+      errors = 0;
+    } catch (e) {
+      // 일시적인 폴링 오류는 간격을 늘려가며 다시 시도하고, 계속 실패하면 작업을 취소한 뒤 실패로 돌려줘요.
+      errors++;
+      if (errors >= MAX_POLL_ERRORS) {
+        await Promise.resolve().then(() => cancel(handle)).catch(() => {});
+        return failed(provider, '상태 확인이 ' + errors + '번 연속 실패했어요: ' + (e && e.message));
+      }
+    }
+    if (cur) last = cur;
+    if (cur && last.finished) {
       if (!last.ok) return failed(provider, last.error || '분석에 실패했어요');
       return { provider, status: 'done', text: last.text, sources: dedupeSources(last.sources || []), limitHit: !!last.limitHit };
     }
@@ -42,7 +57,7 @@ async function runBackground({ provider, start, poll, cancel, resume, onHandle, 
       if (last.text) return { provider, status: 'done', text: last.text, sources: dedupeSources(last.sources || []), limitHit: true };
       return failed(provider, '시간 한도(' + limits.timeoutMinutes + '분)에 닿아 멈췄어요', { limitHit: true });
     }
-    await sleep(pollMs, signal);
+    await sleep(errors ? pollMs * 2 ** (errors - 1) : pollMs, signal);
   }
 }
 

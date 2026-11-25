@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const { demoReport } = require('./demo-report');
 const { researchPrompt, LABEL } = require('./prompts');
+const { friendlyError } = require('./friendly-error');
 
 const ORDER = ['claude', 'openai', 'gemini'];
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
@@ -76,8 +77,10 @@ function createJobManager({ config, providers, synthesize, store, http, now = ()
       }
       if (job.status === 'cancelled') return r;
       const p = { status: r.status, limitHit: !!r.limitHit };
-      if (r.error) p.error = scrub(r.error);
-      if (r.status === 'failed') console.warn('[분석] ' + (LABEL[id] || id) + ' 실패: ' + (p.error || '이유 없음'));
+      // 로그에는 원문(키 지움)을, 화면과 보고서에는 쉬운 안내를 남겨요.
+      const raw = r.error ? scrub(r.error) : null;
+      if (r.status === 'failed') console.warn('[분석] ' + (LABEL[id] || id) + ' 실패: ' + (raw || '이유 없음'));
+      if (raw) { p.error = friendlyError(id, raw); r = { ...r, error: p.error }; }
       job.providers[id] = p;
       return r;
     }));

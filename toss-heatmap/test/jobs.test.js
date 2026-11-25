@@ -251,3 +251,23 @@ test('store.save throwing in demo mode → job failed, no uncaught exception', a
     assert.deepStrictEqual(u.errs, []);
   } finally { w.restore(); u.restore(); }
 });
+
+test('billing errors become friendly Korean in the job view and for synthesis', async () => {
+  let seen = null;
+  const synth = async (o) => { seen = o.results; throw new Error('모든 AI가 실패했어요'); };
+  const { fakes, mgr } = setup({ synth });
+  const { jobId } = mgr.start(ctx, 'quick');
+  await tick();
+  const warn = console.warn; console.warn = () => {};
+  try {
+    fakes.claude.pending[0].resolve({ provider: 'claude', status: 'failed', sources: [], limitHit: false, error: 'HTTP 400: Your credit balance is too low to access the Anthropic API.' });
+    fakes.openai.pending[0].resolve({ provider: 'openai', status: 'failed', sources: [], limitHit: false, error: 'HTTP 429: You have no credits remaining.' });
+    fakes.gemini.pending[0].resolve({ provider: 'gemini', status: 'failed', sources: [], limitHit: false, error: 'HTTP 429: Rate limit exceeded (limit: 0 input tokens per minute on Free Tier).' });
+    await waitFor(() => mgr.get(jobId).status === 'failed');
+  } finally { console.warn = warn; }
+  const v = mgr.get(jobId);
+  assert.match(v.providers.claude.error, /크레딧/);
+  assert.match(v.providers.openai.error, /크레딧/);
+  assert.match(v.providers.gemini.error, /무료 키/);
+  assert.match(seen.find((r) => r.provider === 'claude').error, /크레딧/);
+});

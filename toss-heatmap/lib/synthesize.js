@@ -36,7 +36,7 @@ async function synthesize({ ctx, results, writers, http, signal }) {
   const done = results.filter((r) => r.status === 'done' && r.text);
   if (!done.length) {
     const reasons = results.map((r) => (LABEL[r.provider] || r.provider) + ': ' + (r.error || r.status || '알 수 없는 이유'));
-    throw new Error('모든 AI가 실패했어요' + (reasons.length ? ' (' + reasons.join(', ') + ')' : ''));
+    throw new Error('모든 AI가 실패했어요' + (reasons.length ? '\n• ' + reasons.join('\n• ') : ''));
   }
   const base = { crossChecked: done.length >= 2, sources: dedupeSources(done.flatMap((r) => r.sources || [])) };
   const prompt = synthesisPrompt(ctx, done);

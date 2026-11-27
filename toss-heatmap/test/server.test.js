@@ -215,3 +215,25 @@ test('POST /api/explain returns 502 with the error text when explaining fails', 
   assert.strictEqual(r.status, 502); assert.match((await r.json()).error, /크레딧/);
   await t.close();
 });
+
+test('makeHttp reports each response to the usage tracker', async () => {
+  const seen = [];
+  const http = makeHttp({ secrets: () => [] }, async () => ({ status: 200, json: { id: 'm' } }), { observe: (u, j) => seen.push([u, j.id]) });
+  await http({ url: 'https://api.anthropic.com/v1/messages' });
+  assert.deepStrictEqual(seen, [['https://api.anthropic.com/v1/messages', 'm']]);
+});
+
+test('usage page and API', async () => {
+  const calls = [];
+  const usage = { summary: () => ({ fx: 1400, providers: {} }), setBalance: (p, v) => { if (p === 'evil') throw new Error('알 수 없는 AI예요.'); calls.push([p, v]); } };
+  const t = await boot({ usage });
+  let r = await fetch(t.url('/usage')); assert.strictEqual(r.status, 200); assert.match(await r.text(), /AI 잔액/);
+  r = await fetch(t.url('/api/usage')); const j = await r.json();
+  assert.strictEqual(j.fx, 1400); assert.deepStrictEqual(j.keys, { claude: false, openai: true, gemini: false });
+  r = await t.post('/api/usage/balance', { provider: 'claude', usd: 12.5 }); assert.strictEqual(r.status, 200);
+  assert.deepStrictEqual(calls, [['claude', 12.5]]);
+  r = await t.post('/api/usage/balance', { provider: 'evil', usd: 1 }); assert.strictEqual(r.status, 400);
+  r = await fetch(t.url('/api/usage/balance'), { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example' }, body: '{"provider":"claude","usd":1}' });
+  assert.strictEqual(r.status, 403);
+  await t.close();
+});

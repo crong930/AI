@@ -12,6 +12,7 @@ const { buildContext } = require('./lib/context');
 const { createJobManager } = require('./lib/jobs');
 const { synthesize } = require('./lib/synthesize');
 const { explain: explainSelection } = require('./lib/explain');
+const { createUsage } = require('./lib/usage');
 const { checkPost, MAX_BODY } = require('./lib/guard');
 
 const ROOT = __dirname;
@@ -241,7 +242,14 @@ const JOB_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const localDate = (d = new Date()) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 
 // AI 공급자가 쓰는 http: 모든 키를 오류 메시지에서 지워줘요.
-function makeHttp(c, request = requestJson) { return (o) => request({ ...o, secrets: c.secrets() }); }
+// usage가 있으면 AI 응답마다 쓴 토큰을 기록해요(예상 잔액 계산용).
+function makeHttp(c, request = requestJson, usage = null) {
+  return async (o) => {
+    const res = await request({ ...o, secrets: c.secrets() });
+    if (usage && res) usage.observe(o.url, res.json);
+    return res;
+  };
+}
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -256,7 +264,8 @@ function createServer(deps = {}) {
   const c = deps.cfg || cfg;
   const jobs = deps.jobs, store = deps.store;
   const snap = deps.snapshot || snapshot;
-  const explain = deps.explain || ((o) => explainSelection({ ...o, config: c, http: makeHttp(c),
+  const usage = deps.usage || null;
+  const explain = deps.explain || ((o) => explainSelection({ ...o, config: c, http: makeHttp(c, undefined, usage),
     providers: [require('./lib/providers/claude'), require('./lib/providers/openai'), require('./lib/providers/gemini')] }));
   const demoSnap = deps.demoSnapshot || demoSnapshot;
   const srv = http.createServer(async (req, res) => {
@@ -266,10 +275,17 @@ function createServer(deps = {}) {
     if (host !== 'localhost:' + port && host !== '127.0.0.1:' + port) return send(res, 403, { error: '이 컴퓨터의 주소(localhost)로만 열 수 있어요.' });
     const url = new URL(req.url, 'http://localhost');
     try {
-      if (req.method === 'POST' && (url.pathname === '/api/analyze' || url.pathname === '/api/explain' || /^\/api\/jobs\/[^/]+\/cancel$/.test(url.pathname))) {
+      if (req.method === 'POST' && (url.pathname === '/api/analyze' || url.pathname === '/api/explain' || url.pathname === '/api/usage/balance' || /^\/api\/jobs\/[^/]+\/cancel$/.test(url.pathname))) {
         const bodyText = await readBody(req);
         const bad = checkPost(req, bodyText, srv.address().port);
         if (bad) return send(res, bad.status, { error: bad.error });
+        if (url.pathname === '/api/usage/balance') {
+          if (!usage) return send(res, 404, { error: '잔액 기록을 쓸 수 없어요.' });
+          let b;
+          try { b = JSON.parse(bodyText); } catch (_) { b = null; }
+          try { usage.setBalance(b && b.provider, b && b.usd); } catch (e) { return send(res, 400, { error: e.message }); }
+          return send(res, 200, { ok: true });
+        }
         if (url.pathname === '/api/explain') {
           let b;
           try { b = JSON.parse(bodyText); } catch (_) { b = null; }
@@ -298,6 +314,8 @@ function createServer(deps = {}) {
       }
       if (req.method !== 'GET') return send(res, 405, { error: '지원하지 않는 요청이에요.' });
       if (url.pathname === '/' || url.pathname === '/index.html') return send(res, 200, fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), 'text/html; charset=utf-8');
+      if (url.pathname === '/usage') return send(res, 200, fs.readFileSync(path.join(ROOT, 'usage.html'), 'utf8'), 'text/html; charset=utf-8');
+      if (url.pathname === '/api/usage') return send(res, 200, { ...(usage ? usage.summary() : { fx: 1400, providers: {} }), keys: { claude: !!c.ai.claude, openai: !!c.ai.openai, gemini: !!c.ai.gemini } });
       if (url.pathname === '/icon.svg') return send(res, 200, fs.readFileSync(path.join(ROOT, 'icon.svg'), 'utf8'), 'image/svg+xml');
       if (url.pathname === '/favicon.ico') return send(res, 200, fs.readFileSync(path.join(ROOT, 'icon.ico')), 'image/x-icon');
       if (url.pathname === '/d3.min.js') return send(res, 200, fs.readFileSync(path.join(ROOT, 'd3.min.js'), 'utf8'), 'text/javascript; charset=utf-8');
@@ -333,11 +351,12 @@ module.exports = { createServer, makeHttp, resumeOnBoot };
 
 if (require.main === module) {
   const store = createStore(path.join(ROOT, 'reports'));
+  const usage = createUsage(path.join(ROOT, 'reports', '.usage.json'), { prices: cfg.prices || {}, fx: Number(cfg.usdKrw) || 1400 });
   const jobs = createJobManager({
-    config: cfg, store, synthesize, http: makeHttp(cfg),
+    config: cfg, store, synthesize, http: makeHttp(cfg, undefined, usage),
     providers: [require('./lib/providers/claude'), require('./lib/providers/openai'), require('./lib/providers/gemini')],
   });
-  const server = createServer({ cfg, jobs, store });
+  const server = createServer({ cfg, jobs, store, usage });
   server.listen(cfg.port, '127.0.0.1', () => {
     const u = 'http://localhost:' + cfg.port;
     console.log('');

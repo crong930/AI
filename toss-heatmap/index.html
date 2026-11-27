@@ -27,6 +27,8 @@ h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
 .dot.live { background: var(--up); box-shadow: 0 0 0 0 rgba(48,204,90,.6); }
 @media (prefers-reduced-motion: no-preference) { .dot.live { animation: pulse 2s infinite; } @keyframes pulse { 70% { box-shadow: 0 0 0 6px rgba(48,204,90,0); } 100% { box-shadow: 0 0 0 0 rgba(48,204,90,0); } } }
 .dot.err { background: var(--down); }
+.navlink { color: var(--fg); text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; margin-right: 8px; font-size: 12px; }
+.navlink:hover { border-color: var(--accent); }
 .banner { font-size: 12px; padding: 8px 12px; border-radius: 6px; }
 .banner.demo { background: #2a2414; border: 1px solid #4a3d1c; color: #e0bb5f; }
 .banner.err { background: #2c1517; border: 1px solid #5a2328; color: #ff9a9d; }
@@ -133,7 +135,7 @@ tr:last-child td { border-bottom: 0; }
 <div class="wrap">
   <div class="top">
     <h1>내 주식 히트맵</h1>
-    <div class="status"><span class="dot" id="dot"></span><span id="stamp">연결 중…</span></div>
+    <div class="status"><a class="navlink" href="/usage">💰 AI 잔액</a><span class="dot" id="dot"></span><span id="stamp">연결 중…</span></div>
   </div>
   <div class="banner demo" id="demo" hidden>데모 모드예요. config.json에 토스증권 Client Id와 Secret을 넣고 다시 실행하면 내 계좌가 보여요.</div>
   <div class="banner err" id="err" hidden></div>

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 잔액</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+:root {
+  --bg: #0b0e10; --panel: #13171a; --line: #232a2f; --fg: #e8ecef; --muted: #87929a;
+  --up: #30cc5a; --down: #f63538; --warn: #e0bb5f; --accent: #3d8bfd;
+  --sans: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { margin: 0; font-size: 22px; }
+a.back { color: var(--fg); text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+.note { font-size: 12px; color: var(--warn); background: #221d0e; border: 1px solid #4a3d1c; border-radius: 6px; padding: 8px 12px; line-height: 1.6; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.card h2 { margin: 0; font-size: 15px; display: flex; justify-content: space-between; align-items: center; }
+.card h2 a { font-size: 11px; color: var(--accent); font-weight: 400; }
+.big { font-family: var(--mono); font-size: 28px; font-variant-numeric: tabular-nums; }
+.big.low { color: var(--down); }
+.sub { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.row input { width: 110px; background: #0f1214; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.row button { background: #1d2a3a; color: var(--fg); border: 1px solid #2e4660; border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer; }
+.msg { font-size: 12px; min-height: 1em; }
+.msg.err { color: #ff9a9d; } .msg.ok { color: var(--up); }
+table { width: 100%; border-collapse: collapse; font-size: 11px; color: var(--muted); }
+td { padding: 3px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+td.r { text-align: right; }
+.nokey { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><h1>💰 AI 잔액 (예상)</h1><a class="back" href="/">← 히트맵으로</a></div>
+  <div class="note">
+    AI 회사들은 일반 API 키로 잔액을 알려주지 않아요. 그래서 <b>지금 잔액을 한 번 넣어 주시면</b>, 이 프로그램이 분석할 때마다 쓴 양을 계산해서 빼 드려요.
+    단가로 계산한 <b>추정치</b>라 실제와 조금 다를 수 있어요. 정확한 금액은 각 회사 사이트(카드 오른쪽 위 링크)에서 확인해 주세요.
+    충전한 뒤에는 새 잔액을 다시 넣어 주세요.
+  </div>
+  <div class="cards" id="cards"></div>
+</div>
+<script>
+const INFO = {
+  claude: { name: 'Claude', link: 'https://console.anthropic.com/settings/billing' },
+  openai: { name: 'ChatGPT', link: 'https://platform.openai.com/settings/organization/billing' },
+  gemini: { name: 'Gemini', link: 'https://aistudio.google.com/usage' },
+};
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
+let FX = 1400;
+const usd = (v) => '$' + Number(v).toFixed(2);
+const krw = (v) => '약 ' + Math.round(Number(v) * FX).toLocaleString('ko-KR') + '원';
+const when = (iso) => { try { return new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (_) { return ''; } };
+
+async function load() {
+  let d;
+  try { const r = await fetch('/api/usage'); d = await r.json(); }
+  catch (_) { $('cards').replaceChildren(el('div', 'msg err', '프로그램(검은 창)이 꺼져 있는 것 같아요. 다시 켠 뒤 새로고침해 주세요.')); return; }
+  FX = d.fx || 1400;
+  const cards = [];
+  for (const id of ['claude', 'openai', 'gemini']) {
+    const p = (d.providers || {})[id] || {}, info = INFO[id];
+    const c = el('div', 'card');
+    const h = el('h2', null, info.name); const a = el('a', null, '실제 잔액 보기 ↗'); a.href = info.link; a.target = '_blank'; a.rel = 'noopener noreferrer'; h.append(a); c.append(h);
+    if (!d.keys || !d.keys[id]) { c.append(el('div', 'nokey', 'config.json에 키가 없어서 쓰지 않아요.')); cards.push(c); continue; }
+    if (p.balanceUsd == null) {
+      c.append(el('div', 'sub', '아직 잔액을 넣지 않았어요. 회사 사이트에서 잔액을 보고 아래에 달러($)로 넣어 주세요.'));
+      c.append(el('div', 'sub', '이번 달 이 프로그램이 쓴 금액: ' + usd(p.monthUsd || 0) + ' (' + krw(p.monthUsd || 0) + ')'));
+    } else {
+      const est = Number(p.estimatedUsd);
+      c.append(el('div', 'big' + (est < 1 ? ' low' : ''), usd(est)));
+      c.append(el('div', 'sub', krw(est) + ' · ' + when(p.balanceAt) + '에 ' + usd(p.balanceUsd) + ' 넣은 뒤 ' + usd(p.spentUsd) + ' 썼어요'));
+      if (est < 1) c.append(el('div', 'msg err', '잔액이 거의 없어요. 충전이 필요할 수 있어요.'));
+      c.append(el('div', 'sub', '이번 달 이 프로그램이 쓴 금액: ' + usd(p.monthUsd || 0)));
+    }
+    const row = el('div', 'row'); const inp = el('input'); inp.type = 'number'; inp.min = '0'; inp.step = '0.01'; inp.placeholder = '예: 20';
+    inp.setAttribute('aria-label', info.name + ' 지금 잔액(달러)');
+    const btn = el('button', null, '지금 잔액 저장'); btn.type = 'button';
+    const msg = el('div', 'msg');
+    btn.onclick = async () => {
+      const v = Number(inp.value);
+      if (inp.value === '' || !Number.isFinite(v) || v < 0) { msg.className = 'msg err'; msg.textContent = '0 이상의 숫자(달러)를 넣어 주세요.'; return; }
+      try {
+        const r = await fetch('/api/usage/balance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: id, usd: v }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+        load();
+      } catch (e) { msg.className = 'msg err'; msg.textContent = '저장하지 못했어요: ' + e.message; }
+    };
+    row.append(el('span', 'sub', '지금 잔액 $'), inp, btn); c.append(row, msg);
+    if ((p.recent || []).length) {
+      const t = el('table'); const tb = el('tbody');
+      for (const r of p.recent) { const tr = el('tr'); tr.append(el('td', null, when(r.at)), el('td', null, r.model), el('td', 'r', usd(r.usd))); tb.append(tr); }
+      t.append(tb); c.append(el('div', 'sub', '최근 사용'), t);
+    }
+    cards.push(c);
+  }
+  $('cards').replaceChildren(...cards);
+}
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

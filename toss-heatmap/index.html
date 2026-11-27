@@ -74,6 +74,7 @@ th:nth-child(-n+2), td:nth-child(-n+2) { text-align: left; }
 tbody tr { cursor: pointer; }
 tbody tr:hover { background: #1a2024; }
 tr:last-child td { border-bottom: 0; }
+td .usd { display: block; font-size: 11px; opacity: .8; }
 .foot { font-size: 11px; color: var(--muted); line-height: 1.6; }
 /* AI 분석 */
 .ai-confirm[hidden], .ai-prog[hidden], .ai-err[hidden], .ai-note[hidden], .past[hidden] { display: none; }
@@ -217,7 +218,20 @@ const fmt = {
   pct: (r) => r == null ? '—' : (r > 0 ? '+' : '') + (r * 100).toFixed(2) + '%',
   price: (v, c) => v == null ? '—' : c === 'USD' ? '$' + d3.format(',.2f')(v) : '₩' + d3.format(',')(Math.round(v)),
   qty: (v) => v == null ? '—' : d3.format(',')(+v.toFixed(6)),
+  usd: (v) => v == null ? '—' : '$' + d3.format(',.2f')(v),
+  sUsd: (v) => v == null ? '—' : (v > 0 ? '+' : v < 0 ? '-' : '') + '$' + d3.format(',.2f')(Math.abs(v)),
 };
+// 미국 주식의 달러 기준 값: 평가손익($), 수익률($ 기준 = 주가만 본 수익률), 평가금액($)
+const usdOf = (p) => {
+  if (!p || p.currency !== 'USD' || p.value == null || p.cost == null) return null;
+  return { value: p.value, cost: p.cost, pnl: p.value - p.cost, rate: p.cost ? (p.value - p.cost) / p.cost : null };
+};
+const usdTotals = (ps) => {
+  const u = ps.map(usdOf).filter(Boolean); if (!u.length) return null;
+  const value = d3.sum(u, (x) => x.value), cost = d3.sum(u, (x) => x.cost);
+  return { value, cost, pnl: value - cost, rate: cost ? (value - cost) / cost : null };
+};
+
 const tone = (el, v) => { el.classList.toggle('up', v > 0); el.classList.toggle('down', v < 0); };
 const SCALES = {
   total: { dom: [-30, -10, -1, 0, 1, 10, 30], ticks: [-30, -20, -10, 0, 10, 20, 30] },
@@ -234,9 +248,10 @@ function drawKpis() {
   setText('k-total', fmt.won((t.valueKrw || 0) + (t.cashTotalKrw || 0)));
   setText('k-total-s', '현금 비중 ' + (((t.cashTotalKrw || 0) / ((t.valueKrw || 0) + (t.cashTotalKrw || 0) || 1)) * 100).toFixed(1) + '%');
   setText('k-value', fmt.won(t.valueKrw));
-  setText('k-value-s', '매수금액 ' + fmt.won(t.costKrw));
+  const ut = usdTotals(S.snap.positions);
+  setText('k-value-s', '매수금액 ' + fmt.won(t.costKrw) + (ut ? ' · 미국 ' + fmt.usd(ut.value) : ''));
   setText('k-pnl', fmt.sWon(t.pnlKrw), t.pnlKrw);
-  setText('k-pnl-s', fmt.pct(t.returnRate), t.returnRate);
+  setText('k-pnl-s', fmt.pct(t.returnRate) + (ut ? ' · 미국 ' + fmt.sUsd(ut.pnl) + ' (' + fmt.pct(ut.rate) + ')' : ''), t.returnRate);
   drawFxKpi(t);
   setText('k-day', fmt.sWon(t.dailyPnlKrw), t.dailyPnlKrw);
   setText('k-day-s', fmt.pct(t.dailyRate), t.dailyRate);
@@ -310,8 +325,9 @@ function ensureTip(el) { let t = el.querySelector('.tip'); if (!t) { t = documen
 function showTip(tip, p, total) {
   const h = document.createElement('h4'); h.textContent = p.name + ' · ' + p.symbol;
   const rows = [['섹터', p.sector], ['보유 수량', fmt.qty(p.quantity) + '주'], ['평균단가', fmt.price(p.avgPrice, p.currency)], ['현재가', fmt.price(p.lastPrice, p.currency)],
-    ['오늘 등락', fmt.pct(p.dailyRate)], ['총 수익률', fmt.pct(p.returnRate)], ['평가손익', fmt.sWon(p.pnlKrw)],
-    ...(p.currency === 'USD' && p.fxGainKrw != null ? [['산 때 평균 환율', d3.format(',.1f')(p.fxBuy) + '원'], ['환차손익', fmt.sWon(p.fxGainKrw)]] : []), ['평가금액', fmt.won(p.valueKrw)], ['비중', (p.valueKrw / total * 100).toFixed(1) + '%']];
+    ['오늘 등락', fmt.pct(p.dailyRate)], ['총 수익률', fmt.pct(p.returnRate) + (usdOf(p) ? ' ($ 기준 ' + fmt.pct(usdOf(p).rate) + ')' : '')],
+    ['평가손익', fmt.sWon(p.pnlKrw) + (usdOf(p) ? ' (' + fmt.sUsd(usdOf(p).pnl) + ')' : '')],
+    ...(p.currency === 'USD' && p.fxGainKrw != null ? [['산 때 평균 환율', d3.format(',.1f')(p.fxBuy) + '원'], ['환차손익', fmt.sWon(p.fxGainKrw)]] : []), ['평가금액', fmt.won(p.valueKrw) + (usdOf(p) ? ' (' + fmt.usd(usdOf(p).value) + ')' : '')], ['비중', (p.valueKrw / total * 100).toFixed(1) + '%']];
   tip.replaceChildren(h, ...rows.map(([k, v]) => { const r = document.createElement('div'); r.className = 'row'; const a = document.createElement('span'), b = document.createElement('span'); a.textContent = k; b.textContent = v; r.append(a, b); return r; }));
   tip.hidden = false;
 }
@@ -328,9 +344,16 @@ function drawTable() {
   ps.sort((a, b) => { const x = a[S.sortKey], y = b[S.sortKey]; return (typeof x === 'string' ? x.localeCompare(y) : (x ?? -Infinity) - (y ?? -Infinity)) * S.sortDir; });
   $('rows').replaceChildren(...ps.map((p) => {
     const tr = document.createElement('tr'); tr.onclick = () => selectSymbol(p.symbol);
+    const u = usdOf(p);
+    // [글, 색 기준 값, 달러 줄(미국 주식만)]
     const cells = [[p.name], [p.sector], [fmt.qty(p.quantity)], [fmt.price(p.avgPrice, p.currency)], [fmt.price(p.lastPrice, p.currency)],
-      [fmt.pct(p.dailyRate), p.dailyRate], [fmt.pct(p.returnRate), p.returnRate], [fmt.sWon(p.pnlKrw), p.pnlKrw], p.currency === 'USD' && p.fxGainKrw != null ? [fmt.sWon(p.fxGainKrw), p.fxGainKrw] : ['—'], [fmt.won(p.valueKrw)], [(p.weight * 100).toFixed(1) + '%']];
-    for (const [t, v] of cells) { const td = document.createElement('td'); td.textContent = t; if (v !== undefined) tone(td, v); tr.append(td); }
+      [fmt.pct(p.dailyRate), p.dailyRate], [fmt.pct(p.returnRate), p.returnRate, u && '$ 기준 ' + fmt.pct(u.rate)], [fmt.sWon(p.pnlKrw), p.pnlKrw, u && fmt.sUsd(u.pnl)],
+      p.currency === 'USD' && p.fxGainKrw != null ? [fmt.sWon(p.fxGainKrw), p.fxGainKrw] : ['—'], [fmt.won(p.valueKrw), undefined, u && fmt.usd(u.value)], [(p.weight * 100).toFixed(1) + '%']];
+    for (const [t, v, sub] of cells) {
+      const td = document.createElement('td'); td.textContent = t; if (v !== undefined) tone(td, v);
+      if (sub) { const sp = document.createElement('span'); sp.className = 'usd'; sp.textContent = sub; td.append(sp); }
+      tr.append(td);
+    }
     return tr;
   }));
 }
@@ -341,6 +364,7 @@ async function drawChart() {
   if (!p) return;
   $('c-title').textContent = p.name + ' (' + p.symbol + ')';
   $('c-sub').textContent = '현재가 ' + fmt.price(p.lastPrice, p.currency) + ' · 평균단가 ' + fmt.price(p.avgPrice, p.currency) + ' · 오늘 ' + fmt.pct(p.dailyRate) + ' · 총 ' + fmt.pct(p.returnRate)
+    + (usdOf(p) ? ' ($ 기준 ' + fmt.pct(usdOf(p).rate) + ', ' + fmt.sUsd(usdOf(p).pnl) + ')' : '')
     + (p.currency === 'USD' && p.fxGainKrw != null ? ' · 환차손익 ' + fmt.sWon(p.fxGainKrw) + ' (산 때 ' + d3.format(',.1f')(p.fxBuy) + '원)' : '');
   const my = ++chartReq;
   let data;

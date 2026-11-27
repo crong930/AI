@@ -13,6 +13,7 @@ const { createJobManager } = require('./lib/jobs');
 const { synthesize } = require('./lib/synthesize');
 const { explain: explainSelection } = require('./lib/explain');
 const { createUsage } = require('./lib/usage');
+const { fxBasis, applyFx } = require('./lib/fx');
 const { checkPost, MAX_BODY } = require('./lib/guard');
 
 const ROOT = __dirname;
@@ -136,6 +137,30 @@ function sectorOf(item) {
 const num = (v) => (v == null || v === '' ? null : Number(v));
 let usdRateCache = { at: 0, rate: null };
 
+// ---------- 환차익·환차손 (거래내역의 매수 환율) ----------
+// 거래내역은 사고팔 때만 바뀌어서 30분에 한 번만 다시 불러와요. 화면은 기다리지 않아요.
+const fxState = { at: 0, basis: null, error: null, loading: null };
+async function fetchUsTrades(acc) {
+  const all = []; let cursor = null;
+  for (let page = 0; page < 50; page++) {
+    const q = '/api/v1/transactions?transactionTypes=BUY,SELL,SECURITIES_TRANSFER_IN,SECURITIES_TRANSFER_OUT&limit=100' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+    const r = await call(q, { account: acc });
+    for (const t of (r && r.transactions) || []) if (t.marketCountry === 'US') all.push(t);
+    if (!r || !r.hasNext || !r.nextCursor) break;
+    cursor = r.nextCursor;
+    await sleep(300);
+  }
+  return all;
+}
+function refreshFx(acc, fxNow) {
+  if (fxState.loading || (fxState.basis && Date.now() - fxState.at < 30 * 60 * 1000)) return;
+  if (!fxState.basis && fxState.error && Date.now() - fxState.at < 5 * 60 * 1000) return;
+  fxState.loading = fetchUsTrades(acc)
+    .then((list) => { fxState.basis = fxBasis(list, fxNow); fxState.error = null; })
+    .catch((e) => { fxState.error = '거래내역을 불러오지 못했어요: ' + e.message; console.warn('[환차] ' + fxState.error); })
+    .finally(() => { fxState.at = Date.now(); fxState.loading = null; });
+}
+
 async function snapshot() {
   const acc = await getAccount();
   ensureSectors();
@@ -173,7 +198,8 @@ async function snapshot() {
   const cashKrw = krw ? num(krw.cashBuyingPower) : null;
   const cashUsd = usd ? num(usd.cashBuyingPower) : null;
   const stockKrw = sum(h.marketValue && h.marketValue.amount);
-  return {
+  if (positions.some((p) => p.currency === 'USD')) refreshFx(acc, fx);
+  return applyFx({
     at: new Date().toISOString(), demo: false, usdKrw: fx,
     totals: {
       valueKrw: stockKrw, costKrw: sum(h.totalPurchaseAmount), pnlKrw: sum(h.profitLoss && h.profitLoss.amount),
@@ -182,7 +208,7 @@ async function snapshot() {
       cashKrw, cashUsd, cashTotalKrw: (cashKrw || 0) + (cashUsd && fx ? cashUsd * fx : 0),
     },
     positions,
-  };
+  }, fxState.basis, { ready: !!fxState.basis, error: fxState.error });
 }
 
 async function candles(q) {
@@ -216,10 +242,10 @@ function demoSnapshot() {
       valueKrw: value * k, costKrw: cost * k, pnlKrw: (value - cost) * k, returnRate: last / avg - 1, dailyRate: daily, dailyPnlKrw: value * k * daily / (1 + daily) };
   });
   const s = (f) => positions.reduce((a, p) => a + p[f], 0);
-  return { at: new Date().toISOString(), demo: true, usdKrw: fx,
+  return applyFx({ at: new Date().toISOString(), demo: true, usdKrw: fx,
     totals: { valueKrw: s('valueKrw'), costKrw: s('costKrw'), pnlKrw: s('pnlKrw'), returnRate: s('valueKrw') / s('costKrw') - 1,
       dailyPnlKrw: s('dailyPnlKrw'), dailyRate: s('dailyPnlKrw') / (s('valueKrw') - s('dailyPnlKrw')), cashKrw: 3250000, cashUsd: 412.5, cashTotalKrw: 3250000 + 412.5 * fx },
-    positions };
+    positions }, { NVDA: { avgFx: 1318.5 }, GOOGL: { avgFx: 1386.2 }, TSLA: { avgFx: 1478.9 } }, { ready: true });
 }
 function demoCandles(q) {
   const p = DEMO.find((d) => d[0] === q.get('symbol')) || DEMO[0];

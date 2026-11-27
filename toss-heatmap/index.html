@@ -33,6 +33,7 @@ h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
 .banner.demo { background: #2a2414; border: 1px solid #4a3d1c; color: #e0bb5f; }
 .banner.err { background: #2c1517; border: 1px solid #5a2328; color: #ff9a9d; }
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.kpi[hidden] { display: none; }
 .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .kpi .l { font-size: 12px; color: var(--muted); }
 .kpi .v { font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -144,6 +145,7 @@ tr:last-child td { border-bottom: 0; }
     <div class="kpi"><span class="l">총 자산 (주식 + 현금)</span><span class="v" id="k-total">—</span><span class="s" id="k-total-s">&nbsp;</span></div>
     <div class="kpi"><span class="l">주식 평가금액</span><span class="v" id="k-value">—</span><span class="s" id="k-value-s">&nbsp;</span></div>
     <div class="kpi"><span class="l">평가손익</span><span class="v" id="k-pnl">—</span><span class="s" id="k-pnl-s">&nbsp;</span></div>
+    <div class="kpi" id="k-fx-box" hidden title="달러로 산 주식이 환율 때문에 얼마나 늘었거나 줄었는지예요. 매입금액($) × (지금 환율 − 산 때 평균 환율)로 계산해요."><span class="l">환차익·환차손 (미국 주식)</span><span class="v" id="k-fx">—</span><span class="s" id="k-fx-s">&nbsp;</span></div>
     <div class="kpi"><span class="l">오늘 손익</span><span class="v" id="k-day">—</span><span class="s" id="k-day-s">&nbsp;</span></div>
     <div class="kpi"><span class="l">주문가능 현금</span><span class="v" id="k-cash">—</span><span class="s" id="k-cash-s">&nbsp;</span></div>
   </section>
@@ -198,7 +200,7 @@ tr:last-child td { border-bottom: 0; }
     <h2>보유 종목</h2>
     <div class="tablewrap">
       <table>
-        <thead><tr><th data-k="name">종목</th><th data-k="sector">섹터</th><th data-k="quantity">수량</th><th data-k="avgPrice">평균단가</th><th data-k="lastPrice">현재가</th><th data-k="dailyRate">오늘</th><th data-k="returnRate">수익률</th><th data-k="pnlKrw">평가손익</th><th data-k="valueKrw">평가금액</th><th data-k="weight">비중</th></tr></thead>
+        <thead><tr><th data-k="name">종목</th><th data-k="sector">섹터</th><th data-k="quantity">수량</th><th data-k="avgPrice">평균단가</th><th data-k="lastPrice">현재가</th><th data-k="dailyRate">오늘</th><th data-k="returnRate">수익률</th><th data-k="pnlKrw">평가손익</th><th data-k="fxGainKrw" title="미국 주식만. 매입금액($) × (지금 환율 − 산 때 평균 환율)">환차손익</th><th data-k="valueKrw">평가금액</th><th data-k="weight">비중</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div>
@@ -235,10 +237,25 @@ function drawKpis() {
   setText('k-value-s', '매수금액 ' + fmt.won(t.costKrw));
   setText('k-pnl', fmt.sWon(t.pnlKrw), t.pnlKrw);
   setText('k-pnl-s', fmt.pct(t.returnRate), t.returnRate);
+  drawFxKpi(t);
   setText('k-day', fmt.sWon(t.dailyPnlKrw), t.dailyPnlKrw);
   setText('k-day-s', fmt.pct(t.dailyRate), t.dailyRate);
   setText('k-cash', fmt.won(t.cashKrw));
   setText('k-cash-s', t.cashUsd != null ? '달러 $' + d3.format(',.2f')(t.cashUsd) + (S.snap.usdKrw ? ' · 환율 ' + d3.format(',.1f')(S.snap.usdKrw) : '') : ' ');
+}
+
+// 환차익·환차손: 거래내역의 매수 환율로 계산한 값이에요(서버 lib/fx.js).
+function drawFxKpi(t) {
+  const box = $('k-fx-box'); box.hidden = !t.fxStatus || t.fxStatus === 'none';
+  if (box.hidden) return;
+  const fx1 = d3.format(',.1f');
+  if (t.fxStatus === 'ok') {
+    setText('k-fx', fmt.sWon(t.fxGainKrw), t.fxGainKrw);
+    let sub = '산 때 평균 ' + fx1(t.fxBuyAvg) + '원 → 지금 ' + fx1(S.snap.usdKrw) + '원';
+    if ((t.fxMissing || []).length) sub += ' · ' + t.fxMissing.length + '종목 기록 없음';
+    setText('k-fx-s', sub);
+  } else if (t.fxStatus === 'loading') { setText('k-fx', '계산 중…'); setText('k-fx-s', '거래내역에서 산 때 환율을 불러오는 중이에요'); }
+  else { setText('k-fx', '—'); setText('k-fx-s', t.fxError || '계산하지 못했어요'); }
 }
 
 function drawLegend() {
@@ -293,7 +310,8 @@ function ensureTip(el) { let t = el.querySelector('.tip'); if (!t) { t = documen
 function showTip(tip, p, total) {
   const h = document.createElement('h4'); h.textContent = p.name + ' · ' + p.symbol;
   const rows = [['섹터', p.sector], ['보유 수량', fmt.qty(p.quantity) + '주'], ['평균단가', fmt.price(p.avgPrice, p.currency)], ['현재가', fmt.price(p.lastPrice, p.currency)],
-    ['오늘 등락', fmt.pct(p.dailyRate)], ['총 수익률', fmt.pct(p.returnRate)], ['평가손익', fmt.sWon(p.pnlKrw)], ['평가금액', fmt.won(p.valueKrw)], ['비중', (p.valueKrw / total * 100).toFixed(1) + '%']];
+    ['오늘 등락', fmt.pct(p.dailyRate)], ['총 수익률', fmt.pct(p.returnRate)], ['평가손익', fmt.sWon(p.pnlKrw)],
+    ...(p.currency === 'USD' && p.fxGainKrw != null ? [['산 때 평균 환율', d3.format(',.1f')(p.fxBuy) + '원'], ['환차손익', fmt.sWon(p.fxGainKrw)]] : []), ['평가금액', fmt.won(p.valueKrw)], ['비중', (p.valueKrw / total * 100).toFixed(1) + '%']];
   tip.replaceChildren(h, ...rows.map(([k, v]) => { const r = document.createElement('div'); r.className = 'row'; const a = document.createElement('span'), b = document.createElement('span'); a.textContent = k; b.textContent = v; r.append(a, b); return r; }));
   tip.hidden = false;
 }
@@ -311,7 +329,7 @@ function drawTable() {
   $('rows').replaceChildren(...ps.map((p) => {
     const tr = document.createElement('tr'); tr.onclick = () => selectSymbol(p.symbol);
     const cells = [[p.name], [p.sector], [fmt.qty(p.quantity)], [fmt.price(p.avgPrice, p.currency)], [fmt.price(p.lastPrice, p.currency)],
-      [fmt.pct(p.dailyRate), p.dailyRate], [fmt.pct(p.returnRate), p.returnRate], [fmt.sWon(p.pnlKrw), p.pnlKrw], [fmt.won(p.valueKrw)], [(p.weight * 100).toFixed(1) + '%']];
+      [fmt.pct(p.dailyRate), p.dailyRate], [fmt.pct(p.returnRate), p.returnRate], [fmt.sWon(p.pnlKrw), p.pnlKrw], p.currency === 'USD' && p.fxGainKrw != null ? [fmt.sWon(p.fxGainKrw), p.fxGainKrw] : ['—'], [fmt.won(p.valueKrw)], [(p.weight * 100).toFixed(1) + '%']];
     for (const [t, v] of cells) { const td = document.createElement('td'); td.textContent = t; if (v !== undefined) tone(td, v); tr.append(td); }
     return tr;
   }));
@@ -322,7 +340,8 @@ async function drawChart() {
   const p = S.snap && S.snap.positions.find((x) => x.symbol === S.selected);
   if (!p) return;
   $('c-title').textContent = p.name + ' (' + p.symbol + ')';
-  $('c-sub').textContent = '현재가 ' + fmt.price(p.lastPrice, p.currency) + ' · 평균단가 ' + fmt.price(p.avgPrice, p.currency) + ' · 오늘 ' + fmt.pct(p.dailyRate) + ' · 총 ' + fmt.pct(p.returnRate);
+  $('c-sub').textContent = '현재가 ' + fmt.price(p.lastPrice, p.currency) + ' · 평균단가 ' + fmt.price(p.avgPrice, p.currency) + ' · 오늘 ' + fmt.pct(p.dailyRate) + ' · 총 ' + fmt.pct(p.returnRate)
+    + (p.currency === 'USD' && p.fxGainKrw != null ? ' · 환차손익 ' + fmt.sWon(p.fxGainKrw) + ' (산 때 ' + d3.format(',.1f')(p.fxBuy) + '원)' : '');
   const my = ++chartReq;
   let data;
   try {
